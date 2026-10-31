@@ -1,0 +1,167 @@
+rules_version = '2';
+
+// Правила Firestore для проекта my-notes-71034 («Планер»).
+// Актуализировать в Firebase Console → Firestore Database → Rules.
+//
+// Принцип: пользователь видит ТОЛЬКО свои личные данные и пространства,
+// в которые он вступил (по приглашению на email или по ссылке-коду).
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Личные данные пользователя ──────────────────────────
+    // users/{uid}/notes|sections|reminders|reminder_sections/...
+    match /users/{uid}/{collection}/{docId} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // ── Семейные / общие заметки ────────────────────────────
+    match /family_spaces/{spaceId} {
+      // Сам документ пространства — только участникам.
+      allow read: if isMember(spaceId);
+      allow create: if isSignedIn();
+      // Переименовать/менять оформление может владелец…
+      allow update: if isOwner(spaceId);
+      // …а удалить пространство — только тот, кто его создал.
+      allow delete: if isSignedIn() &&
+        request.auth.uid == resource.data.createdBy;
+
+      match /members/{memberUid} {
+        // Состав видят только участники.
+        allow read: if isMember(spaceId);
+        // Владелец добавляет участников напрямую.
+        // Сам пользователь может записать свою карточку ТОЛЬКО если:
+        //  - у него есть приглашение на email в этом пространстве, или
+        //  - он предъявил действующий код-ссылку вступления.
+        allow create: if isSignedIn() && (
+          isOwner(spaceId) ||
+          // Создатель пространства записывает себя владельцем.
+          (request.auth.uid == memberUid &&
+           request.resource.data.role == 'owner' &&
+           isSpaceCreator(spaceId)) ||
+          // Принятие приглашения по email.
+          (request.auth.uid == memberUid && hasInvite(spaceId)) ||
+          // Вступление по коду-ссылке.
+          (request.auth.uid == memberUid && hasJoinToken(spaceId))
+        );
+        // Участник правит только свою карточку; владелец — любую.
+        allow update: if isSignedIn() &&
+          (isOwner(spaceId) || request.auth.uid == memberUid);
+        // Участника убирает владелец или он сам.
+        allow delete: if isSignedIn() &&
+          (isOwner(spaceId) || request.auth.uid == memberUid);
+      }
+
+      match /invites/{inviteEmail} {
+        allow read: if isSignedIn() &&
+          (isOwner(spaceId) || request.auth.token.email == inviteEmail);
+        // Приглашения создаёт только владелец пространства.
+        allow create, delete: if isSignedIn() && isOwner(spaceId);
+        // Приглашённый принять/отклонить (меняет status).
+        allow update: if isSignedIn() &&
+          (isOwner(spaceId) || request.auth.token.email == inviteEmail);
+      }
+
+      match /notes/{noteId} {
+        allow read: if isSignedIn() && isMember(spaceId);
+        allow create: if isSignedIn() && isMember(spaceId);
+        // Править может любой участник (галочка «выполнено», описание)…
+        allow update: if isSignedIn() && isMember(spaceId);
+        // …а удалить — только создатель задачи.
+        allow delete: if isSignedIn() && isMember(spaceId) &&
+          resource.data.createdBy == request.auth.uid;
+      }
+
+      match /messages/{msgId} {
+        allow read: if isSignedIn() && isMember(spaceId);
+        allow create: if isSignedIn() && isMember(spaceId) &&
+          request.resource.data.senderUid == request.auth.uid;
+        allow update: if false; // сообщения не правятся
+        allow delete: if isSignedIn() &&
+          (isOwner(spaceId) || resource.data.senderUid == request.auth.uid);
+      }
+
+      match /deletions/{noteId} {
+        // Tombstones удалённых задач — участникам (для синхронизации).
+        allow read: if isSignedIn() && isMember(spaceId);
+        allow create: if isSignedIn() && isMember(spaceId);
+        allow delete: if isSignedIn() && isMember(spaceId);
+      }
+    }
+
+    // ── Коды-ссылки вступления ──────────────────────────────
+    // doc id = секретный токен. Читать может любой, кто знает токен
+    // (сам токен и есть «ссылка»); писать — владелец пространства.
+    match /join_codes/{token} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() &&
+        request.resource.data.spaceId != null &&
+        isOwner(request.resource.data.spaceId);
+      allow update: if false;
+      allow delete: if isSignedIn() && isOwner(resource.data.spaceId);
+    }
+
+    // ── Почтовый ящик приглашений ───────────────────────────
+    // doc id = email. Виден владельцу email; создаёт владелец пространства.
+    match /mailboxes/{email}/invites/{spaceId} {
+      allow read: if isSignedIn() &&
+        (request.auth.token.email == email || isOwner(spaceId));
+      allow create: if isSignedIn() &&
+        (isOwner(spaceId) || request.auth.token.email == email);
+      allow update: if isSignedIn() &&
+        (request.auth.token.email == email || isOwner(spaceId));
+      allow delete: if isSignedIn() &&
+        (request.auth.token.email == email || isOwner(spaceId));
+    }
+
+    // ── Функции ─────────────────────────────────────────────
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function spacePath(spaceId) {
+      return /databases/$(database)/documents/family_spaces/$(spaceId);
+    }
+
+    // Пользователь создал это пространство.
+    function isSpaceCreator(spaceId) {
+      return isSignedIn() &&
+        exists(spacePath(spaceId)) &&
+        get(spacePath(spaceId)).data.createdBy == request.auth.uid;
+    }
+
+    function memberPath(spaceId) {
+      return /databases/$(database)/documents/family_spaces/$(spaceId)/members/$(request.auth.uid);
+    }
+
+    function isMember(spaceId) {
+      return isSignedIn() && exists(memberPath(spaceId));
+    }
+
+    function isOwner(spaceId) {
+      return isSignedIn() &&
+        exists(memberPath(spaceId)) &&
+        get(memberPath(spaceId)).data.role == 'owner';
+    }
+
+    // Есть приглашение на email текущего пользователя.
+    function hasInvite(spaceId) {
+      return exists(
+        /databases/$(database)/documents/mailboxes/$(request.auth.token.email)/invites/$(spaceId)
+      );
+    }
+
+    // В данных новой карточки участника передан токен-ссылка,
+    // который действительно для этого пространства.
+    function hasJoinToken(spaceId) {
+      return request.resource.data.joinToken is string &&
+        exists(
+          /databases/$(database)/documents/join_codes/$(request.resource.data.joinToken)
+        ) &&
+        get(
+          /databases/$(database)/documents/join_codes/$(request.resource.data.joinToken)
+        ).data.spaceId == spaceId;
+    }
+  }
+}

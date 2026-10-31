@@ -1,0 +1,29 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.iml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Сборочные артефакты и дистрибутивы
+dist/
+installer/planer-setup.exe
+
+# Секреты — НИКОГДА не коммитить!
+android/key.properties
+android/upload-keystore.jks
+*.jks
+*.keystore
+*.pepk
+rustore-release/
+
+# Системные файлы
+.DS_Store
+Thumbs.db
+*.log
