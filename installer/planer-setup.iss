@@ -23,6 +23,8 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
+SetupIconFile=..\windows\runner\resources\app_icon.ico
+UninstallDisplayIcon={app}\{#AppExeName}
 DisableProgramGroupPage=yes
 
 [Languages]
