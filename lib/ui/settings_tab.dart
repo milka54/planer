@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -381,6 +382,18 @@ class _SettingsTabState extends State<SettingsTab> {
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Закрыть'),
+          ),
+          // С телефона файл не перенести — но ссылку можно отправить на ПК.
+          TextButton.icon(
+            icon: const Icon(Icons.copy_rounded, size: 18),
+            label: const Text('Скопировать ссылку'),
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: pcVersionUrl));
+              if (ctx.mounted) Navigator.pop(ctx);
+              if (context.mounted) {
+                showSnack(context, 'Ссылка скопирована');
+              }
+            },
           ),
           FilledButton.icon(
             icon: const Icon(Icons.download_rounded),

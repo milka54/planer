@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -35,7 +37,7 @@ android {
         create("release") {
             // Данные подписи берутся из android/key.properties
             // (файл не попадает в git — см. .gitignore).
-            val keystoreProps = java.util.Properties().apply {
+            val keystoreProps = Properties().apply {
                 val f = rootProject.file("key.properties")
                 if (f.exists()) f.inputStream().use { load(it) }
             }
