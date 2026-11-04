@@ -1,4 +1,4 @@
-﻿import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:planer/data/firebase_rest.dart';
 import 'package:planer/data/models/note.dart';
 import 'package:planer/data/models/standalone_reminder.dart';
@@ -33,7 +33,7 @@ void main() {
       fireAt: DateTime.now().add(const Duration(days: 30)),
       ownerKey: uid,
       sectionId: rsec.id,
-      yearly: true,
+      repeatType: StandaloneReminder.repeatYearly,
       body: 'позвонить и поздравить',
     );
     await a.pushReminder(rem);

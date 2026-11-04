@@ -162,7 +162,7 @@ class _JoinSpaceScreenState extends State<JoinSpaceScreen> {
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(
+                            borderSide: BorderSide(
                               color: AppPalette.accent,
                               width: 2,
                             ),

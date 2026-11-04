@@ -2,13 +2,20 @@ import 'dart:async';
 
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/theme.dart';
+import '../core/update_service.dart';
 import '../data/auth_service.dart';
 import '../data/family_service.dart';
 import '../data/notes_repository.dart';
+import '../data/reminder_service.dart';
+import '../data/notifications.dart';
 import 'auth_hub.dart';
+import 'family_space_screen.dart';
 import 'join_space_screen.dart';
+import 'note_detail.dart';
+import 'multi_select_bar.dart';
 import 'note_editor.dart';
 import 'family_tab.dart';
 import 'notes_tab.dart';
@@ -40,7 +47,7 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _index = 0;
   final _pageCtrl = PageController();
   StreamSubscription<Uri>? _deepLinksSub;
@@ -48,20 +55,69 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Ссылка-приглашение planer://join/<token> — открываем экран вступления.
     _deepLinksSub = AppLinks().uriLinkStream.listen(_handleDeepLink);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      NotificationService.onTap = _handleNotifTap;
+      unawaited(SharedPreferences.getInstance()
+          .then((p) => p.setBool('app_foreground_v1', true)));
       NotesRepository.instance.load();
       FamilyService.instance.load().then((_) {
         FamilyService.instance.loadUnread();
         // Ловим сообщения, пока пользователь в любом разделе приложения.
         FamilyService.instance.startBackgroundPolling();
+        // Запуск по тапу на уведомление — открываем нужный раздел.
+        final launch = NotificationService.consumeLaunchPayload();
+        if (launch != null) _handleNotifTap(launch);
       });
+      // ПК-версия: автообновление из приложения без установщика.
+      if (UpdateService.supportedOnThisPlatform) {
+        unawaited(_autoUpdate());
+      }
     });
+  }
+
+  /// Обновление ПК-версии прямо из приложения: проверяет при старте и
+  /// предлагает установить на месте (без установщика и переустановки).
+  Future<void> _autoUpdate() async {
+    await Future<void>.delayed(const Duration(seconds: 3));
+    final info = await UpdateService.check();
+    if (info == null || !mounted) return;
+    final install = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        title: Text('Доступно обновление ${info.version}'),
+        content: Text(
+          info.notes.isEmpty
+              ? 'Установить обновление сейчас?'
+              : '${info.notes}\n\nУстановить обновление сейчас?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Позже'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Установить'),
+          ),
+        ],
+      ),
+    );
+    if (install != true || !mounted) return;
+    try {
+      await UpdateService.download(info);
+    } catch (_) {
+      // Сбой не рвёт работу приложения — обновление повторится при следующем старте.
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    NotificationService.onTap = null;
     _deepLinksSub?.cancel();
     _pageCtrl.dispose();
     super.dispose();
@@ -79,6 +135,68 @@ class _HomeShellState extends State<HomeShell> {
     FamilyService.instance.load().then((_) {
       if (mounted) setState(() {});
     });
+  }
+
+  /// Тап по уведомлению: открывает раздел, к которому оно относится.
+  /// payload: 'note:<id>' | 'rem:<id>' | 'chat:<spaceId>' | 'task:<spaceId>'.
+  Future<void> _handleNotifTap(String payload) async {
+    final sep = payload.indexOf(':');
+    if (sep <= 0) return;
+    final kind = payload.substring(0, sep);
+    final id = payload.substring(sep + 1);
+    // Даём навигатору построиться (холодный старт).
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    if (!mounted) return;
+    switch (kind) {
+      case 'chat' || 'task':
+        var found =
+            FamilyService.instance.spaces.value.where((s) => s.id == id);
+        if (found.isEmpty) {
+          await FamilyService.instance.load();
+          found =
+              FamilyService.instance.spaces.value.where((s) => s.id == id);
+        }
+        if (found.isEmpty || !mounted) return;
+        _goTo(2);
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => FamilySpaceScreen(
+              space: found.first,
+              initialTab: kind == 'chat' ? 1 : 0,
+            ),
+          ),
+        );
+        if (mounted) setState(() {});
+      case 'note':
+        final notes = NotesRepository.instance.all.where((n) => n.id == id);
+        if (notes.isEmpty) return;
+        _goTo(0);
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => NoteDetailScreen(note: notes.first),
+          ),
+        );
+        if (mounted) setState(() {});
+      case 'rem':
+        _goTo(1);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Флаг «на переднем плане» видят и поллер, и фоновая проверка:
+    // подавлять уведомления открытого чата можно только пока пользователь
+    // реально смотрит в экран, свёрнутое приложение обязано уведомлять.
+    final fg = state == AppLifecycleState.resumed;
+    FamilyService.appInForeground = fg;
+    unawaited(SharedPreferences.getInstance()
+        .then((p) => p.setBool('app_foreground_v1', fg)));
+    if (state != AppLifecycleState.resumed) return;
+    // Возврат в приложение: система могла убить процесс
+    // (батарея TECNO и т.п.) — будильники пропадают, уведомления
+    // чата/задач заминают. Догоняем оба.
+    ReminderService.instance.load();
+    FamilyService.instance.pollAllSpaces();
   }
 
   void _goTo(int i) {
@@ -123,8 +241,14 @@ class _HomeShellState extends State<HomeShell> {
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      // Пока идёт множественный выбор — FAB прячем: панель действий
+      // (переместить/в архив/удалить) занимает нижнюю зону экрана.
       floatingActionButton: _index == 0
-          ? TweenAnimationBuilder<double>(
+          ? ValueListenableBuilder<bool>(
+              valueListenable: notesSelectActive,
+              builder: (context, selecting, __) => selecting
+                  ? const SizedBox.shrink()
+                  : TweenAnimationBuilder<double>(
               tween: Tween(begin: 0, end: 1),
               duration: const Duration(milliseconds: 380),
               curve: Curves.easeOutBack,
@@ -165,7 +289,8 @@ class _HomeShellState extends State<HomeShell> {
                   ],
                 ),
               ),
-            )
+            ),
+          )
           : null,
       bottomNavigationBar: ValueListenableBuilder<Map<String, int>>(
         valueListenable: FamilyService.instance.unread,

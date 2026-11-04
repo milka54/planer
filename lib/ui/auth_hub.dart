@@ -156,7 +156,7 @@ class _AuthHubScreenState extends State<AuthHubScreen> {
                               _registerMode
                                   ? 'Уже есть аккаунт? Войти'
                                   : 'Нет аккаунта? Регистрация',
-                              style: const TextStyle(color: AppPalette.accentSoft),
+                              style: TextStyle(color: AppPalette.accentSoft),
                             ),
                           ),
                           if (!_registerMode)

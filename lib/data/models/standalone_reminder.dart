@@ -92,6 +92,12 @@ class ReminderSection {
 
 /// Напоминание: заголовок, описание, дата/время, раздел, повтор.
 class StandaloneReminder {
+  /// Типы повтора: без повтора, ежегодно, каждые N дней, по дням недели.
+  static const repeatNone = 'none';
+  static const repeatYearly = 'yearly';
+  static const repeatEveryN = 'everyN';
+  static const repeatWeekly = 'weekly';
+
   final String id;
   String title;
   String? body;
@@ -101,8 +107,14 @@ class StandaloneReminder {
   /// id раздела; null — «Без раздела».
   String? sectionId;
 
-  /// Повторять ежегодно (дни рождения, годовщины).
-  bool yearly;
+  /// Тип повтора (см. repeatNone/repeatYearly/repeatEveryN/repeatWeekly).
+  String repeatType;
+
+  /// Интервал в днях для repeatEveryN.
+  int repeatEvery;
+
+  /// Дни недели для repeatWeekly: 1=Пн … 7=Вс.
+  List<int> weekdays;
 
   String ownerKey;
 
@@ -113,16 +125,20 @@ class StandaloneReminder {
     required this.fireAt,
     this.done = false,
     this.sectionId,
-    this.yearly = false,
+    this.repeatType = repeatNone,
+    this.repeatEvery = 1,
+    List<int>? weekdays,
     this.ownerKey = 'guest',
-  });
+  }) : weekdays = weekdays ?? [];
 
   factory StandaloneReminder.create({
     required String title,
     String? body,
     required DateTime fireAt,
     String? sectionId,
-    bool yearly = false,
+    String repeatType = repeatNone,
+    int repeatEvery = 1,
+    List<int>? weekdays,
     String ownerKey = 'guest',
   }) {
     final ms = DateTime.now().microsecondsSinceEpoch;
@@ -132,10 +148,15 @@ class StandaloneReminder {
       body: body,
       fireAt: fireAt,
       sectionId: sectionId,
-      yearly: yearly,
+      repeatType: repeatType,
+      repeatEvery: repeatEvery,
+      weekdays: weekdays,
       ownerKey: ownerKey,
     );
   }
+
+  bool get yearly => repeatType == repeatYearly;
+  bool get hasRepeat => repeatType != repeatNone;
 
   /// Дата следующего ежегодного срабатывания (та же дата/время через год).
   DateTime nextYear() => DateTime(
@@ -145,6 +166,70 @@ class StandaloneReminder {
         fireAt.hour,
         fireAt.minute,
       );
+
+  /// Следующее срабатывание строго после [after] (по умолчанию — сейчас).
+  /// null — если повтора нет.
+  DateTime? nextOccurrence([DateTime? after]) {
+    final from = after ?? DateTime.now();
+    switch (repeatType) {
+      case repeatYearly:
+        var next = nextYear();
+        while (!next.isAfter(from)) {
+          next = DateTime(
+            next.year + 1,
+            fireAt.month,
+            fireAt.day,
+            fireAt.hour,
+            fireAt.minute,
+          );
+        }
+        return next;
+      case repeatEveryN:
+        final n = repeatEvery.clamp(1, 365);
+        var next = fireAt;
+        while (!next.isAfter(from)) {
+          next = next.add(Duration(days: n));
+        }
+        return next;
+      case repeatWeekly:
+        if (weekdays.isEmpty) return null;
+        var candidate = DateTime(
+          from.year,
+          from.month,
+          from.day,
+          fireAt.hour,
+          fireAt.minute,
+        );
+        for (var i = 0; i < 8; i++) {
+          if (candidate.isAfter(from) && weekdays.contains(candidate.weekday)) {
+            return candidate;
+          }
+          candidate = candidate.add(const Duration(days: 1));
+        }
+        return null;
+      default:
+        return null;
+    }
+  }
+
+  /// Человекочитаемое описание повтора (для списков и формы).
+  String repeatLabel({bool short = false}) {
+    switch (repeatType) {
+      case repeatYearly:
+        return 'Каждый год';
+      case repeatEveryN:
+        return repeatEvery == 1
+            ? 'Каждый день'
+            : 'Каждые $repeatEvery дн.';
+      case repeatWeekly:
+        if (weekdays.isEmpty) return 'По дням недели';
+        const names = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+        final sorted = [...weekdays]..sort();
+        return 'По ${sorted.map((d) => names[d - 1]).join(', ')}';
+      default:
+        return short ? '' : 'Без повтора';
+    }
+  }
 
   bool get hasSection => sectionId != null;
 
@@ -156,7 +241,10 @@ class StandaloneReminder {
     bool? done,
     String? sectionId,
     bool clearSection = false,
-    bool? yearly,
+    String? repeatType,
+    int? repeatEvery,
+    List<int>? weekdays,
+    bool clearWeekdays = false,
     String? ownerKey,
   }) {
     return StandaloneReminder(
@@ -166,7 +254,9 @@ class StandaloneReminder {
       fireAt: fireAt ?? this.fireAt,
       done: done ?? this.done,
       sectionId: clearSection ? null : (sectionId ?? this.sectionId),
-      yearly: yearly ?? this.yearly,
+      repeatType: repeatType ?? this.repeatType,
+      repeatEvery: repeatEvery ?? this.repeatEvery,
+      weekdays: clearWeekdays ? [] : (weekdays ?? this.weekdays),
       ownerKey: ownerKey ?? this.ownerKey,
     );
   }
@@ -178,6 +268,9 @@ class StandaloneReminder {
         'fireAt': fireAt.toIso8601String(),
         'done': done,
         'sectionId': sectionId,
+        'repeatType': repeatType,
+        'repeatEvery': repeatEvery,
+        'weekdays': weekdays,
         'yearly': yearly,
         'ownerKey': ownerKey,
       };
@@ -190,7 +283,11 @@ class StandaloneReminder {
         fireAt: DateTime.parse(json['fireAt'] as String),
         done: json['done'] == true,
         sectionId: json['sectionId'] as String?,
-        yearly: json['yearly'] == true,
+        repeatType: _readRepeatType(json),
+        repeatEvery: (json['repeatEvery'] as num?)?.toInt() ?? 1,
+        weekdays: (json['weekdays'] as List<dynamic>? ?? [])
+            .map((e) => (e as num).toInt())
+            .toList(),
         ownerKey: (json['ownerKey'] as String?) ?? 'guest',
       );
 
@@ -201,6 +298,9 @@ class StandaloneReminder {
         'fireAt': fireAt.millisecondsSinceEpoch,
         'done': done,
         'sectionId': sectionId,
+        'repeatType': repeatType,
+        'repeatEvery': repeatEvery,
+        'weekdays': weekdays,
         'yearly': yearly,
         'ownerKey': ownerKey,
       };
@@ -215,9 +315,22 @@ class StandaloneReminder {
         ),
         done: json['done'] == true,
         sectionId: json['sectionId'] as String?,
-        yearly: json['yearly'] == true,
+        repeatType: _readRepeatType(json),
+        repeatEvery: (json['repeatEvery'] as num?)?.toInt() ?? 1,
+        weekdays: (json['weekdays'] as List<dynamic>? ?? [])
+            .map((e) => (e as num).toInt())
+            .toList(),
         ownerKey: (json['ownerKey'] as String?) ?? 'guest',
       );
+}
+
+/// Старые записи имели только флаг yearly — мигрируем на repeatType.
+String _readRepeatType(Map<String, dynamic> json) {
+  final raw = json['repeatType'] as String?;
+  if (raw != null) return raw;
+  return json['yearly'] == true
+      ? StandaloneReminder.repeatYearly
+      : StandaloneReminder.repeatNone;
 }
 
 int _uuidSeq = 0;

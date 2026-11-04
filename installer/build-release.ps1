@@ -20,8 +20,11 @@ flutter build windows --release
 # & $signtool sign /f $cert /p $pass /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 `
 #     "installer\planer-setup.exe"
 
-# 4. Копирование в dist/ для загрузки в релиз
+# 4. Портативный пакет для обновления из приложения (без установщика)
+Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\planer-win-portable.zip -Force
+
+# 5. Копирование в dist/ для загрузки в релиз
 Copy-Item installer\planer-setup.exe dist\planer-setup.exe -Force
 
-Write-Host "Готово: dist\planer-setup.exe"
+Write-Host "Готово: dist\planer-setup.exe, dist\planer-win-portable.zip"
 Write-Host "Не забудьте обновить dist\version.json (версия + описание)"

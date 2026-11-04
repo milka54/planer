@@ -96,7 +96,7 @@ class _RemindersTabState extends State<RemindersTab> {
                       color: AppPalette.accent.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.calendar_month_rounded,
                       color: AppPalette.accent,
                     ),
@@ -201,7 +201,7 @@ class _RemindersTabState extends State<RemindersTab> {
                           ),
                           borderRadius: BorderRadius.circular(30),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.alarm_add_rounded,
                           size: 42,
                           color: AppPalette.accent,
@@ -380,6 +380,37 @@ class _NoteReminderTile extends StatelessWidget {
                   icon: Icons.notes_rounded,
                   label: 'заметка',
                   color: AppPalette.sky,
+                ),
+                IconButton(
+                  tooltip: 'Убрать напоминание',
+                  icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                  onPressed: () async {
+                    final ok = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(22)),
+                        title: const Text('Убрать напоминание?'),
+                        content: Text(
+                          '«${note.title.isEmpty ? 'Без названия' : note.title}»\n\n'
+                          'Заметка останется — уберётся только напоминание.',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('Отмена'),
+                          ),
+                          FilledButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text('Убрать'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (ok == true) {
+                      await NotesRepository.instance.setReminder(note, null);
+                    }
+                  },
                 ),
               ],
             ),
@@ -575,8 +606,8 @@ class _CustomReminderTile extends StatelessWidget {
                   ),
                 ),
               ),
-              if (reminder.yearly)
-                const Padding(
+              if (reminder.hasRepeat)
+                Padding(
                   padding: EdgeInsets.only(left: 6),
                   child: Icon(
                     Icons.repeat_rounded,
@@ -588,18 +619,53 @@ class _CustomReminderTile extends StatelessWidget {
           ),
           subtitle: Text(
             reminder.body == null || reminder.body!.trim().isEmpty
-                ? formatDateTimeRu(reminder.fireAt)
-                : '${reminder.body} · ${formatDateTimeRu(reminder.fireAt)}',
+                ? '${formatDateTimeRu(reminder.fireAt)}${reminder.hasRepeat ? ' · ${reminder.repeatLabel(short: true)}' : ''}'
+                : '${reminder.body} · ${formatDateTimeRu(reminder.fireAt)}${reminder.hasRepeat ? ' · ${reminder.repeatLabel(short: true)}' : ''}',
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
-          trailing: past
-              ? const Icon(Icons.history_rounded, color: Colors.black26)
-              : const PulseIcon(
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (past)
+                const Icon(Icons.history_rounded, color: Colors.black26)
+              else
+                PulseIcon(
                   icon: Icons.notifications_active_rounded,
                   color: AppPalette.accent,
                   size: 20,
                 ),
+              IconButton(
+                tooltip: 'Удалить напоминание',
+                icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                onPressed: () async {
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(22)),
+                      title: const Text('Удалить напоминание?'),
+                      content: Text('«${reminder.title}»'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Отмена'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Удалить'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (ok == true) {
+                    await ReminderService.instance.remove(reminder);
+                    onChanged();
+                  }
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );

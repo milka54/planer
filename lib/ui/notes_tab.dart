@@ -114,13 +114,17 @@ class _NotesTabState extends State<NotesTab> {
       _selected.clear();
       _selected.add(noteId);
     });
+    notesSelectActive.value = true;
   }
 
   void _toggleSelect(String noteId) {
     setState(() {
       if (_selected.contains(noteId)) {
         _selected.remove(noteId);
-        if (_selected.isEmpty) _selectMode = false;
+        if (_selected.isEmpty) {
+          _selectMode = false;
+          notesSelectActive.value = false;
+        }
       } else {
         _selected.add(noteId);
       }
@@ -132,6 +136,7 @@ class _NotesTabState extends State<NotesTab> {
       _selectMode = false;
       _selected.clear();
     });
+    notesSelectActive.value = false;
   }
 
   List<Note> _selectedNotes() => NotesRepository.instance.all
@@ -187,6 +192,7 @@ class _NotesTabState extends State<NotesTab> {
 
   @override
   void dispose() {
+    notesSelectActive.value = false;
     _search.dispose();
     super.dispose();
   }
@@ -474,6 +480,7 @@ class _NotesTabState extends State<NotesTab> {
                     onArchive: _archiveSelected,
                     onDelete: _deleteSelected,
                     onClear: _exitSelect,
+                    bottomGap: 10,
                   ),
               ],
             );
@@ -1010,7 +1017,7 @@ class _SearchNoteCard extends StatelessWidget {
                     ),
                   ),
                   if (note.hasReminder)
-                    const Icon(Icons.alarm_on_rounded,
+                    Icon(Icons.alarm_on_rounded,
                         size: 16, color: AppPalette.accent),
                 ],
               ),
@@ -1074,7 +1081,7 @@ class _EmptyState extends StatelessWidget {
                   ),
                 ],
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.edit_note_rounded,
                 size: 46,
                 color: AppPalette.accent,

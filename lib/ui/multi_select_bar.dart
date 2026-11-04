@@ -4,6 +4,10 @@ import '../core/theme.dart';
 import '../data/models/note.dart';
 import '../data/notes_repository.dart';
 
+/// Активен режим множественного выбора заметок (NotesTab / SectionNotesScreen).
+/// HomeShell слушает его, чтобы прятать FAB под панелью выбора.
+final ValueNotifier<bool> notesSelectActive = ValueNotifier<bool>(false);
+
 /// Нижняя панель действий при множественном выборе заметок.
 class NoteMultiSelectBar extends StatelessWidget {
   const NoteMultiSelectBar({
@@ -13,6 +17,7 @@ class NoteMultiSelectBar extends StatelessWidget {
     required this.onArchive,
     required this.onDelete,
     required this.onClear,
+    this.bottomGap = 12,
   });
 
   final int count;
@@ -21,12 +26,15 @@ class NoteMultiSelectBar extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onClear;
 
+  /// Отступ снизу (панель должна быть выше NavigationBar на главном экране).
+  final double bottomGap;
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
       top: false,
       child: Container(
-        margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        margin: EdgeInsets.fromLTRB(12, 0, 12, bottomGap),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         decoration: BoxDecoration(
           color: const Color(0xFF1E2F52),
@@ -59,7 +67,7 @@ class NoteMultiSelectBar extends StatelessWidget {
             IconButton(
               tooltip: 'В раздел',
               onPressed: count == 0 ? null : onMoveToSection,
-              icon: const Icon(Icons.drive_file_move_rounded,
+              icon: Icon(Icons.drive_file_move_rounded,
                   color: AppPalette.accent),
             ),
             IconButton(

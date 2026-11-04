@@ -107,6 +107,9 @@ class Note {
   /// Локальные пути к голосовым вложениям.
   List<String> voicePaths;
 
+  /// Локальные пути к фото-вложениям.
+  List<String> imagePaths;
+
   Note({
     required this.id,
     required this.title,
@@ -120,7 +123,9 @@ class Note {
     required this.ownerKey,
     this.sectionId,
     List<String>? voicePaths,
-  }) : voicePaths = voicePaths ?? [];
+    List<String>? imagePaths,
+  })  : voicePaths = voicePaths ?? [],
+        imagePaths = imagePaths ?? [];
 
   factory Note.create({
     required String title,
@@ -130,6 +135,7 @@ class Note {
     DateTime? reminderDate,
     int colorIndex = 0,
     List<String>? voicePaths,
+    List<String>? imagePaths,
   }) {
     final now = DateTime.now();
     return Note(
@@ -143,17 +149,22 @@ class Note {
       ownerKey: ownerKey,
       sectionId: sectionId,
       voicePaths: voicePaths ?? [],
+      imagePaths: imagePaths ?? [],
     );
   }
 
   bool get hasVoice => voicePaths.isNotEmpty;
+
+  bool get hasImages => imagePaths.isNotEmpty;
 
   bool get hasReminder => reminderDate != null;
 
   String get preview {
     final t = content.trim();
     if (t.isEmpty) {
+      if (hasVoice && hasImages) return 'Голосовая заметка · фото';
       if (hasVoice) return 'Голосовая заметка';
+      if (hasImages) return 'Заметка с фото';
       return 'Пустая заметка';
     }
     return t.length > 120 ? '${t.substring(0, 120)}…' : t;
@@ -171,6 +182,7 @@ class Note {
     String? sectionId,
     bool clearSection = false,
     List<String>? voicePaths,
+    List<String>? imagePaths,
   }) {
     return Note(
       id: id,
@@ -185,6 +197,7 @@ class Note {
       ownerKey: ownerKey ?? this.ownerKey,
       sectionId: clearSection ? null : (sectionId ?? this.sectionId),
       voicePaths: voicePaths ?? this.voicePaths,
+      imagePaths: imagePaths ?? this.imagePaths,
     );
   }
 
@@ -201,6 +214,7 @@ class Note {
         'ownerKey': ownerKey,
         'sectionId': sectionId,
         'voicePaths': voicePaths,
+        'imagePaths': imagePaths,
       };
 
   factory Note.fromJson(Map<String, dynamic> json) {
@@ -236,6 +250,9 @@ class Note {
       voicePaths: (json['voicePaths'] as List<dynamic>? ?? [])
           .map((e) => e.toString())
           .toList(),
+      imagePaths: (json['imagePaths'] as List<dynamic>? ?? [])
+          .map((e) => e.toString())
+          .toList(),
     );
   }
 
@@ -252,6 +269,7 @@ class Note {
         'ownerKey': ownerKey,
         'sectionId': sectionId,
         'voicePaths': voicePaths,
+        'imagePaths': imagePaths,
       };
 
   factory Note.fromFirestore(Map<String, dynamic> json) => Note(
@@ -277,6 +295,9 @@ class Note {
         ownerKey: (json['ownerKey'] as String?) ?? 'guest',
         sectionId: json['sectionId'] as String?,
         voicePaths: (json['voicePaths'] as List<dynamic>? ?? [])
+            .map((e) => e.toString())
+            .toList(),
+        imagePaths: (json['imagePaths'] as List<dynamic>? ?? [])
             .map((e) => e.toString())
             .toList(),
       );

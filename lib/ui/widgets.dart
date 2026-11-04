@@ -7,11 +7,13 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/theme.dart';
+import '../data/speech_service.dart';
 
 class ThemedBackground extends StatelessWidget {
   final Widget child;
   final String? assetPath;
   final String? filePath;
+  final List<Color>? gradientColors;
   final bool dim;
 
   const ThemedBackground({
@@ -19,6 +21,7 @@ class ThemedBackground extends StatelessWidget {
     required this.child,
     this.assetPath,
     this.filePath,
+    this.gradientColors,
     this.dim = false,
   });
 
@@ -37,7 +40,7 @@ class ThemedBackground extends StatelessWidget {
             filterQuality: FilterQuality.medium,
             errorBuilder: (_, __, ___) {
               // Файл недоступен — сразу градиент, без пустого экрана.
-              return const _GradientBackdrop();
+              return _GradientBackdrop(colors: gradientColors);
             },
           )
         else if (asset != null)
@@ -48,8 +51,18 @@ class ThemedBackground extends StatelessWidget {
             filterQuality: FilterQuality.medium,
             errorBuilder: (_, e, ___) {
               debugPrint('bg asset error: $asset → $e');
-              return const _GradientBackdrop();
+              return _GradientBackdrop(colors: gradientColors);
             },
+          )
+        else if (gradientColors != null && gradientColors!.length >= 2)
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: gradientColors!,
+              ),
+            ),
           )
         else
           const _GradientBackdrop(),
@@ -66,27 +79,32 @@ class ThemedBackground extends StatelessWidget {
 }
 
 class _GradientBackdrop extends StatelessWidget {
-  const _GradientBackdrop();
+  final List<Color>? colors;
+
+  const _GradientBackdrop({this.colors});
 
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
+    final base = colors != null && colors!.length >= 2
+        ? colors!
+        : (dark
+            ? [
+                AppPalette.inkDeep,
+                AppPalette.ink.withOpacity(0.95),
+                const Color(0xFF1A2748),
+              ]
+            : [
+                AppPalette.paper,
+                const Color(0xFFFFF7EC),
+                const Color(0xFFEFE6D8),
+              ]);
     return DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: dark
-              ? [
-                  AppPalette.inkDeep,
-                  AppPalette.ink.withOpacity(0.95),
-                  const Color(0xFF1A2748),
-                ]
-              : [
-                  AppPalette.paper,
-                  const Color(0xFFFFF7EC),
-                  const Color(0xFFEFE6D8),
-                ],
+          colors: base,
         ),
       ),
       child: Stack(
@@ -411,7 +429,7 @@ class _BetaBannerState extends State<BetaBanner>
                   color: AppPalette.accent.withOpacity(0.25),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.science_rounded,
                   size: 18,
                   color: AppPalette.accent,
@@ -799,3 +817,96 @@ class MagazineTitle extends StatelessWidget {
 }
 
 double shimmer(double t) => (math.sin(t * math.pi * 2) + 1) / 2;
+
+/// Просмотр фото/тяжёлых медиа — отдельным экраном (не диалогом:
+/// тапы по картинке конфликтовали с формой под диалогом).
+class ImageViewerScreen extends StatelessWidget {
+  final String path;
+
+  const ImageViewerScreen({super.key, required this.path});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        leading: IconButton(
+          tooltip: 'Закрыть',
+          icon: const Icon(Icons.close_rounded),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
+      body: Center(
+        child: InteractiveViewer(
+          maxScale: 6,
+          child: Image.file(
+            File(path),
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => const Icon(
+              Icons.broken_image_outlined,
+              color: Colors.white54,
+              size: 64,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Переиспользуемая mic-кнопка диктовки для любого TextEditingController:
+/// буфер + нарастание текста + закрепление фразы по finalResult.
+class DictationSuffix extends StatefulWidget {
+  final TextEditingController controller;
+
+  const DictationSuffix({super.key, required this.controller});
+
+  @override
+  State<DictationSuffix> createState() => _DictationSuffixState();
+}
+
+class _DictationSuffixState extends State<DictationSuffix> {
+  bool _active = false;
+  String _buf = '';
+
+  Future<void> _toggle() async {
+    if (_active) {
+      await SpeechService.instance.stop();
+      if (mounted) setState(() => _active = false);
+      return;
+    }
+    await SpeechService.instance.stop();
+    _buf = widget.controller.text.trim();
+    final ok = await SpeechService.instance.start(
+      onResult: (text, finalResult) {
+        widget.controller.text = _buf.isEmpty ? text : '$_buf $text';
+        if (finalResult) _buf = widget.controller.text;
+      },
+      onStopped: () {
+        if (mounted) setState(() => _active = false);
+      },
+    );
+    if (!ok) {
+      if (mounted) {
+        showSnack(context, 'Голосовой ввод недоступен на этом устройстве');
+      }
+      return;
+    }
+    if (mounted) setState(() => _active = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: 'Голосовой ввод',
+      icon: Icon(
+        _active ? Icons.mic_rounded : Icons.mic_none_rounded,
+        color: _active ? AppPalette.rose : null,
+      ),
+      onPressed: _toggle,
+    );
+  }
+}
+

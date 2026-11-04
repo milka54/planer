@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../core/theme.dart';
 import '../core/update_service.dart';
 import '../data/auth_service.dart';
+import '../data/backup_service.dart';
 import '../data/notes_repository.dart';
 import '../data/storage.dart';
 import 'auth_hub.dart';
@@ -25,12 +26,66 @@ class SettingsTab extends StatefulWidget {
 class _SettingsTabState extends State<SettingsTab> {
   UpdateInfo? _update;
   bool _checkingUpdate = false;
+  bool _downloading = false;
+  double? _updateProgress;
 
   @override
   void initState() {
     super.initState();
     if (UpdateService.supportedOnThisPlatform) {
       _checkUpdate();
+    }
+  }
+
+  Future<void> _exportBackup(BuildContext context) async {
+    try {
+      showSnack(context, 'Готовим резервную копию…');
+      final path = await BackupService.instance.exportAll();
+      if (!context.mounted) return;
+      if (path == null) return;
+      showSnack(context, 'Резервная копия сохранена');
+    } catch (e) {
+      if (context.mounted) {
+        showSnack(context, 'Не удалось сохранить копию');
+      }
+    }
+  }
+
+  Future<void> _importBackup(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        title: const Text('Импорт данных'),
+        content: const Text(
+          'Заметки и напоминания из файла объединятся с текущими. '
+          'По совпадению id побеждает более свежая версия.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Выбрать файл'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    try {
+      final summary = await BackupService.instance.importAll();
+      if (!context.mounted) return;
+      if (summary == null) return;
+      showSnack(
+        context,
+        'Импорт готов: ${summary.notes} заметок, ${summary.reminders} напоминаний',
+      );
+    } catch (e) {
+      if (context.mounted) {
+        showSnack(context, 'Не удалось импортировать файл');
+      }
     }
   }
 
@@ -44,6 +99,28 @@ class _SettingsTabState extends State<SettingsTab> {
       });
       if (info == null) {
         showSnack(context, 'У вас последняя версия');
+      }
+    }
+  }
+
+  Future<void> _runUpdate() async {
+    final info = _update;
+    if (info == null || _downloading) return;
+    setState(() {
+      _downloading = true;
+      _updateProgress = null;
+    });
+    try {
+      await UpdateService.download(
+        info,
+        onProgress: (p) {
+          if (mounted) setState(() => _updateProgress = p);
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() => _downloading = false);
+        showSnack(context, 'Не удалось скачать обновление');
       }
     }
   }
@@ -184,6 +261,29 @@ class _SettingsTabState extends State<SettingsTab> {
           ),
         ),
         const SizedBox(height: 18),
+        const SizedBox(height: 18),
+        const SectionTitle('ДАННЫЕ'),
+        GlassPanel(
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            children: [
+              _SettingsTile(
+                icon: Icons.save_alt_rounded,
+                title: 'Экспорт данных',
+                subtitle: 'Резервная копия: заметки, напоминания, вложения',
+                onTap: () => _exportBackup(context),
+              ),
+              const Divider(height: 8),
+              _SettingsTile(
+                icon: Icons.restore_rounded,
+                title: 'Импорт данных',
+                subtitle: 'Восстановить из файла резервной копии',
+                onTap: () => _importBackup(context),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
         const SectionTitle('ПРИЛОЖЕНИЕ'),
         GlassPanel(
           padding: const EdgeInsets.all(8),
@@ -264,12 +364,21 @@ class _SettingsTabState extends State<SettingsTab> {
                             ),
                           ),
                           FilledButton(
-                            onPressed: () => UpdateService.download(_update!),
+                            onPressed: _downloading ? null : _runUpdate,
                             style: FilledButton.styleFrom(
                               backgroundColor: AppPalette.mint,
                               foregroundColor: AppPalette.inkDeep,
                             ),
-                            child: const Text('Обновить'),
+                            child: _downloading
+                                ? SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      value: _updateProgress,
+                                    ),
+                                  )
+                                : const Text('Обновить'),
                           ),
                         ],
                       ),
@@ -291,22 +400,22 @@ class _SettingsTabState extends State<SettingsTab> {
                 const Divider(height: 8),
               ],
               _SettingsTile(
-                icon: Icons.laptop_mac_rounded,
-                title: 'Версия для ПК (Windows)',
-                subtitle: 'Установите Планер на компьютер —\nзаметки синхронизируются с телефоном',
+                icon: Icons.phone_android_rounded,
+                title: 'Версия для смартфона',
+                subtitle: 'Установите Планер на смартфон —\nзаметки синхронизируются с компьютером',
                 trailing: const Icon(Icons.open_in_new_rounded, size: 18),
-                onTap: () => _showPcVersionDialog(context),
+                onTap: () => _showPhoneVersionDialog(context),
               ),
               const Divider(height: 8),
               _SettingsTile(
                 icon: Icons.info_outline_rounded,
                 title: 'О приложении',
-                subtitle: 'Планер 1.2.0',
+                subtitle: 'Планер 1.3.4',
                 onTap: () {
                   showAboutDialog(
                     context: context,
                     applicationName: 'Планер',
-                    applicationVersion: '1.2.0 · BETA',
+                    applicationVersion: '1.3.4 · BETA',
                     children: const [
                       SizedBox(height: 12),
                       Text(
@@ -338,39 +447,37 @@ class _SettingsTabState extends State<SettingsTab> {
     return curBg.name;
   }
 
-  /// Ссылка на установщик Windows-версии (GitHub Releases).
-  /// Ссылка вида `latest` всегда ведёт на самую свежую версию —
-  /// менять её при каждом релизе НЕ нужно.
-  static String get pcVersionUrl => UpdateService.manifestUrl
-      .replaceFirst('version.json', 'planer-setup.exe');
+  /// Ссылка на страницу смартфон-версии (RuStore).
+  static const phoneVersionUrl =
+      'https://www.rustore.ru/catalog/app/ru.planer.notes';
 
-  Future<void> _showPcVersionDialog(BuildContext context) async {
+  Future<void> _showPhoneVersionDialog(BuildContext context) async {
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-        title: const Text('Планер для ПК'),
+        title: const Text('Планер для смартфона'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Версия для Windows позволяет работать с заметками '
-              'на компьютере: вход в тот же аккаунт, все разделы '
-              'и заметки синхронизируются с телефоном.',
+              'Мобильная версия позволяет работать с заметками '
+              'на смартфоне: вход в тот же аккаунт, все разделы '
+              'и заметки синхронизируются с компьютером.',
             ),
             const SizedBox(height: 14),
             Row(
-              children: const [
-                Icon(Icons.laptop_windows_rounded,
+              children: [
+                Icon(Icons.phone_android_rounded,
                     size: 18, color: AppPalette.accent),
                 SizedBox(width: 8),
-                Expanded(child: Text('Скачайте установщик с GitHub')),
+                Expanded(child: Text('Установите Планер из RuStore')),
               ],
             ),
             const SizedBox(height: 8),
             Row(
-              children: const [
+              children: [
                 Icon(Icons.sync_rounded, size: 18, color: AppPalette.accent),
                 SizedBox(width: 8),
                 Expanded(child: Text('Войдите в аккаунт — данные подтянутся')),
@@ -383,12 +490,12 @@ class _SettingsTabState extends State<SettingsTab> {
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Закрыть'),
           ),
-          // С телефона файл не перенести — но ссылку можно отправить на ПК.
           TextButton.icon(
             icon: const Icon(Icons.copy_rounded, size: 18),
             label: const Text('Скопировать ссылку'),
             onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: pcVersionUrl));
+              await Clipboard.setData(
+                  const ClipboardData(text: phoneVersionUrl));
               if (ctx.mounted) Navigator.pop(ctx);
               if (context.mounted) {
                 showSnack(context, 'Ссылка скопирована');
@@ -396,21 +503,13 @@ class _SettingsTabState extends State<SettingsTab> {
             },
           ),
           FilledButton.icon(
-            icon: const Icon(Icons.download_rounded),
-            label: const Text('Скачать для ПК'),
+            icon: const Icon(Icons.open_in_new_rounded),
+            label: const Text('Открыть RuStore'),
             onPressed: () async {
               Navigator.pop(ctx);
-              final url = pcVersionUrl;
-              if (url.isEmpty) {
-                showSnack(
-                  context,
-                  'Ссылка на установщик скоро появится',
-                );
-                return;
-              }
               try {
                 await launchUrl(
-                  Uri.parse(url),
+                  Uri.parse(phoneVersionUrl),
                   mode: LaunchMode.externalApplication,
                 );
               } catch (_) {
@@ -653,7 +752,7 @@ class _ThemeTile extends StatelessWidget {
                       width: 36,
                       height: 8,
                       decoration: BoxDecoration(
-                        color: option.seed.withOpacity(0.8),
+                        color: option.accent.withOpacity(0.8),
                         borderRadius: BorderRadius.circular(4),
                       ),
                     ),
@@ -674,7 +773,7 @@ class _ThemeTile extends StatelessWidget {
                           ? Icons.dark_mode_rounded
                           : Icons.light_mode_rounded,
                       size: 18,
-                      color: option.seed,
+                      color: option.accent,
                     ),
                   ],
                 ),
@@ -708,7 +807,7 @@ class _ThemeTile extends StatelessWidget {
                 ),
               ),
               if (selected)
-                const Icon(Icons.check_circle_rounded,
+                Icon(Icons.check_circle_rounded,
                     color: AppPalette.accent),
             ],
           ),
@@ -754,6 +853,16 @@ class _BgTile extends StatelessWidget {
               fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => const SizedBox.shrink(),
             );
+    } else if (option.isGradient) {
+      image = DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: option.gradientColors!,
+          ),
+        ),
+      );
     } else {
       image = Image.asset(
         option.assetPath!,
@@ -803,7 +912,7 @@ class _BgTile extends StatelessWidget {
               ),
             ),
             if (selected)
-              const Positioned(
+              Positioned(
                 top: 8,
                 right: 8,
                 child: CircleAvatar(

@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../core/theme.dart';
 import '../data/models/standalone_reminder.dart';
 import '../data/reminder_service.dart';
+import '../data/speech_service.dart';
 import 'reminder_time_picker.dart';
 import 'widgets.dart';
 
@@ -38,7 +39,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
           0,
         );
     String? sectionId = existing?.sectionId;
-    bool yearly = existing?.yearly ?? false;
+    RepeatRule repeat = (
+      type: existing?.repeatType ?? StandaloneReminder.repeatNone,
+      every: existing?.repeatEvery ?? 1,
+      weekdays: [...?existing?.weekdays],
+    );
+    String? dictating;
+    var titleBuf = '';
+    var bodyBuf = '';
+    var sheetActive = true;
 
     final saved = await showModalBottomSheet<bool>(
       context: context,
@@ -82,17 +91,57 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   TextField(
                     controller: titleCtrl,
                     autofocus: existing == null,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       hintText: 'Что напомнить?',
-                      prefixIcon: Icon(Icons.notification_add_rounded),
+                      prefixIcon: const Icon(Icons.notification_add_rounded),
+                      suffixIcon: IconButton(
+                        tooltip: 'Голосовой ввод',
+                        icon: Icon(
+                          dictating == 'title'
+                              ? Icons.mic_rounded
+                              : Icons.mic_none_rounded,
+                          color: dictating == 'title' ? AppPalette.rose : null,
+                        ),
+                        onPressed: () => _toggleDictation(
+                          ctx: ctx,
+                          setModal: setModal,
+                          field: 'title',
+                          ctrl: titleCtrl,
+                          getActive: () => dictating,
+                          setActive: (v) => dictating = v,
+                          getBuf: () => titleBuf,
+                          setBuf: (v) => titleBuf = v,
+                          sheetActive: () => sheetActive,
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: bodyCtrl,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       hintText: 'Комментарий (необязательно)',
-                      prefixIcon: Icon(Icons.notes_rounded),
+                      prefixIcon: const Icon(Icons.notes_rounded),
+                      suffixIcon: IconButton(
+                        tooltip: 'Голосовой ввод',
+                        icon: Icon(
+                          dictating == 'body'
+                              ? Icons.mic_rounded
+                              : Icons.mic_none_rounded,
+                          color: dictating == 'body' ? AppPalette.rose : null,
+                        ),
+                        onPressed: () => _toggleDictation(
+                          ctx: ctx,
+                          setModal: setModal,
+                          field: 'body',
+                          ctrl: bodyCtrl,
+                          getActive: () => dictating,
+                          setActive: (v) => dictating = v,
+                          getBuf: () => bodyBuf,
+                          setBuf: (v) => bodyBuf = v,
+                          sheetActive: () => sheetActive,
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -146,13 +195,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   const SizedBox(height: 10),
                   GlassPanel(
                     glow: false,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: SwitchListTile(
-                      secondary: const Icon(Icons.repeat_rounded),
-                      title: const Text('Повторять ежегодно'),
-                      subtitle: const Text('Дни рождения, годовщины'),
-                      value: yearly,
-                      onChanged: (v) => setModal(() => yearly = v),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: ListTile(
+                      leading: const Icon(Icons.repeat_rounded),
+                      title: const Text('Повтор'),
+                      subtitle: Text(_repeatPreview(repeat)),
+                      trailing: const Icon(Icons.expand_more_rounded),
+                      onTap: () async {
+                        final picked = await showRepeatRulePicker(
+                          ctx,
+                          initial: repeat,
+                        );
+                        if (picked != null) {
+                          setModal(() => repeat = picked);
+                        }
+                      },
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -185,6 +242,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
       },
     );
 
+    sheetActive = false;
+    await SpeechService.instance.stop();
     if (saved == true) {
       final title = titleCtrl.text.trim();
       final body = bodyCtrl.text.trim().isEmpty ? null : bodyCtrl.text.trim();
@@ -195,7 +254,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
             body: body,
             fireAt: fireAt,
             sectionId: sectionId,
-            yearly: yearly,
+            repeatType: repeat.type,
+            repeatEvery: repeat.every,
+            weekdays: repeat.weekdays,
           ),
         );
       } else {
@@ -207,7 +268,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
             fireAt: fireAt,
             sectionId: sectionId,
             clearSection: sectionId == null,
-            yearly: yearly,
+            repeatType: repeat.type,
+            repeatEvery: repeat.every,
+            weekdays: repeat.weekdays,
           ),
         );
       }
@@ -218,6 +281,44 @@ class _CalendarScreenState extends State<CalendarScreen> {
     titleCtrl.dispose();
     bodyCtrl.dispose();
     if (mounted) setState(() {});
+  }
+
+  /// Переключает диктовку в поле [field] ('title'|'body').
+  Future<void> _toggleDictation({
+    required BuildContext ctx,
+    required void Function(void Function()) setModal,
+    required String field,
+    required TextEditingController ctrl,
+    required String? Function() getActive,
+    required void Function(String?) setActive,
+    required String Function() getBuf,
+    required void Function(String) setBuf,
+    required bool Function() sheetActive,
+  }) async {
+    if (getActive() == field) {
+      await SpeechService.instance.stop();
+      if (sheetActive()) setModal(() => setActive(null));
+      return;
+    }
+    await SpeechService.instance.stop();
+    setBuf(ctrl.text.trim());
+    final ok = await SpeechService.instance.start(
+      onResult: (text, finalResult) {
+        final base = getBuf();
+        ctrl.text = base.isEmpty ? text : '$base $text';
+        if (finalResult) setBuf(ctrl.text);
+      },
+      onStopped: () {
+        if (sheetActive()) setModal(() => setActive(null));
+      },
+    );
+    if (!ok) {
+      if (ctx.mounted) {
+        showSnack(ctx, 'Голосовой ввод недоступен на этом устройстве');
+      }
+      return;
+    }
+    if (sheetActive()) setModal(() => setActive(field));
   }
 
   /// Возвращает id выбранного раздела или null («Без раздела»).
@@ -249,7 +350,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   leading: const Icon(Icons.folder_off_rounded),
                   title: const Text('Без раздела'),
                   trailing: sectionId == null
-                      ? const Icon(Icons.check_rounded,
+                      ? Icon(Icons.check_rounded,
                           color: AppPalette.accent)
                       : null,
                   onTap: () => Navigator.pop(sheetCtx, ''),
@@ -267,14 +368,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     ),
                     title: Text(s.title),
                     trailing: sectionId == s.id
-                        ? const Icon(Icons.check_rounded,
+                        ? Icon(Icons.check_rounded,
                             color: AppPalette.accent)
                         : null,
                     onTap: () => Navigator.pop(sheetCtx, s.id),
                   ),
                 const Divider(),
                 ListTile(
-                  leading: const Icon(Icons.create_new_folder_outlined,
+                  leading: Icon(Icons.create_new_folder_outlined,
                       color: AppPalette.accent),
                   title: const Text(
                     'Создать раздел',
@@ -658,4 +759,16 @@ Future<ReminderSection?> showCreateReminderSectionDialog(
   );
   ctrl.dispose();
   return section;
+}
+
+
+String _repeatPreview(RepeatRule rule) {
+  return StandaloneReminder(
+    id: '',
+    title: '',
+    fireAt: DateTime.now(),
+    repeatType: rule.type,
+    repeatEvery: rule.every,
+    weekdays: rule.weekdays,
+  ).repeatLabel();
 }

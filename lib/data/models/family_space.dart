@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 int _uuidSeq = 0;
 
 String _uuid(String prefix) {
@@ -117,6 +119,22 @@ class FamilyMember {
 
   static FamilyMember fromFirestore(Map<String, dynamic> json) =>
       FamilyMember.fromMap(json);
+}
+
+/// Имя участника из локального кэша members (для уведомлений о задачах).
+String? familyMemberDisplayName(String? membersJsonRaw, String uid) {
+  if (membersJsonRaw == null || membersJsonRaw.isEmpty) return null;
+  try {
+    for (final e in jsonDecode(membersJsonRaw) as List<dynamic>) {
+      final m = FamilyMember.fromMap(Map<String, dynamic>.from(e as Map));
+      if (m.uid != uid) continue;
+      final name = m.displayName.trim();
+      if (name.isNotEmpty) return name;
+      final mail = m.email.trim();
+      return mail.isEmpty ? null : mail.split('@').first;
+    }
+  } catch (_) {}
+  return null;
 }
 
 /// Совместная заметка-задача с чекбоксом и напоминанием.

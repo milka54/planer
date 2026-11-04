@@ -33,13 +33,17 @@ class _SectionNotesScreenState extends State<SectionNotesScreen> {
       _selected.clear();
       _selected.add(noteId);
     });
+    notesSelectActive.value = true;
   }
 
   void _toggle(String noteId) {
     setState(() {
       if (_selected.contains(noteId)) {
         _selected.remove(noteId);
-        if (_selected.isEmpty) _selectMode = false;
+        if (_selected.isEmpty) {
+          _selectMode = false;
+          notesSelectActive.value = false;
+        }
       } else {
         _selected.add(noteId);
       }
@@ -51,6 +55,7 @@ class _SectionNotesScreenState extends State<SectionNotesScreen> {
       _selectMode = false;
       _selected.clear();
     });
+    notesSelectActive.value = false;
   }
 
   List<Note> _selectedNotes(List<Note> all) =>
@@ -135,6 +140,12 @@ class _SectionNotesScreenState extends State<SectionNotesScreen> {
   }
 
   @override
+  void dispose() {
+    notesSelectActive.value = false;
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final section = widget.section;
@@ -149,16 +160,18 @@ class _SectionNotesScreenState extends State<SectionNotesScreen> {
       appBar: AppBar(
         title: Text(title),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openEditor(),
-        backgroundColor: AppPalette.accent,
-        foregroundColor: AppPalette.inkDeep,
-        icon: const Icon(Icons.edit_rounded),
-        label: const Text(
-          'Новая',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-      ),
+      floatingActionButton: _selectMode
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: () => _openEditor(),
+              backgroundColor: AppPalette.accent,
+              foregroundColor: AppPalette.inkDeep,
+              icon: const Icon(Icons.edit_rounded),
+              label: const Text(
+                'Новая',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
       body: ValueListenableBuilder<List<Note>>(
         valueListenable: NotesRepository.instance.notes,
         builder: (context, _, __) {

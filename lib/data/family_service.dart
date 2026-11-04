@@ -28,6 +28,11 @@ class FamilyService {
   /// Пространство, чат которого сейчас открыт (не уведомляем о нём).
   static String? activeChatSpaceId;
 
+  /// Приложение на переднем плане (см. HomeShell.didChangeAppLifecycleState).
+  /// Подавлять уведомления открытого чата можно только пока пользователь
+  /// реально смотрит в экран — свёрнутое приложение обязано уведомлять.
+  static bool appInForeground = true;
+
   /// Счётчики непрочитанных сообщений по пространствам.
   final ValueNotifier<Map<String, int>> unread =
       ValueNotifier<Map<String, int>>({});
@@ -73,6 +78,7 @@ class FamilyService {
     final prefs = await _p();
     for (final space in spaces.value) {
       try {
+        await _pollSpaceTasks(space, prefs);
         final msgs = await messages(space.id);
         if (msgs.isEmpty) continue;
         final lastKey = '$_kLastMsgPrefix${space.id}';
@@ -89,15 +95,18 @@ class FamilyService {
         await prefs.setString(lastKey, lastMsg.id);
         if (newCount == 0) continue;
 
-        if (activeChatSpaceId != space.id) {
+        // Смотрим в этот чат на переднем плане — сообщение видно в списке.
+        // Свёрнутое приложение обязано уведомлять (и считать непрочитанные).
+        if (!(appInForeground && activeChatSpaceId == space.id)) {
           final lastForeign = msgs.lastWhere(
             (m) => m.senderUid != myUid,
             orElse: () => lastMsg,
           );
-          await NotificationService.instance.showNow(
-            id: space.id.hashCode & 0x7fffffff,
-            title: space.name,
-            body: '${lastForeign.senderName}: ${lastForeign.text}',
+          await NotificationService.instance.showSpaceChatMessage(
+            spaceId: space.id,
+            spaceName: space.name,
+            senderName: lastForeign.senderName,
+            text: lastForeign.text,
           );
           final cur = Map<String, int>.from(unread.value);
           cur[space.id] = (cur[space.id] ?? 0) + newCount;
@@ -551,7 +560,12 @@ class FamilyService {
 
   /// Создаёт код-ссылку для вступления. Возвращает токен.
   Future<String> generateJoinCode(String spaceId) async {
-    final space = spaces.value.firstWhere((s) => s.id == spaceId);
+    final found = spaces.value.where((s) => s.id == spaceId);
+    if (found.isEmpty) {
+      throw const RestAuthException(
+          'Пространство не найдено — обновите его и попробуйте снова');
+    }
+    final space = found.first;
     final token = _newToken();
     if (_useRest) {
       await FirebaseRest.instance.upsertPath('join_codes', token, {
@@ -785,6 +799,18 @@ class FamilyService {
         debugPrint('family notes pull: $e');
       }
     }
+    final spaceName = _spaceNameOf(spaceId);
+    for (final n in list) {
+      await NotificationService.instance.checkSpaceTaskReminder(
+        noteId: n.id,
+        spaceId: spaceId,
+        spaceName: spaceName,
+        taskTitle: n.title.isEmpty ? n.content : n.title,
+        taskBody: n.title.isEmpty ? '' : n.content,
+        reminderDate: n.reminderDate,
+        done: n.done,
+      );
+    }
     return list;
   }
 
@@ -803,10 +829,85 @@ class FamilyService {
       assigneeUid: assigneeUid,
     );
     await _saveNote(spaceId, note);
+    await _notifyTaskCreated(spaceId, note);
     return note;
   }
 
+  /// Имя пространства для уведомлений (по кэшу списка пространств).
+  String _spaceNameOf(String spaceId) {
+    for (final s in spaces.value) {
+      if (s.id == spaceId) return s.name;
+    }
+    return 'Пространство';
+  }
+
+  /// Уведомление о новой задаче в пространстве.
+  /// Создателю — сразу; остальным участникам — при опросе.
+  Future<void> _notifyTaskCreated(String spaceId, FamilyNote note) async {
+    try {
+      await NotificationService.instance.showSpaceTaskAdded(
+        noteId: note.id,
+        spaceId: spaceId,
+        spaceName: _spaceNameOf(spaceId),
+        taskTitle: note.title.isEmpty ? note.content : note.title,
+        actorName: (_email ?? '').split('@').first,
+      );
+    } catch (e) {
+      debugPrint('family taskCreated: $e');
+    }
+  }
+
+  /// Задачи других участников, которых ещё не видели, → уведомление.
+  Future<void> _pollSpaceTasks(
+      FamilySpace space, SharedPreferences prefs) async {
+    final key = 'family_knowntasks_v1_${space.id}';
+    List<FamilyNote> tasks;
+    try {
+      tasks = await notes(space.id);
+    } catch (e) {
+      debugPrint('family pollSpaceTasks(${space.id}): $e');
+      return;
+    }
+    final knownRaw = prefs.getString(key);
+    if (knownRaw == null) {
+      // Первый проход — запоминаем состав без уведомлений.
+      await prefs.setString(
+          key, jsonEncode(tasks.map((t) => t.id).toList()));
+      return;
+    }
+    final known = <String>{
+      ...(jsonDecode(knownRaw) as List<dynamic>).cast<String>(),
+    };
+    final fresh = tasks.where((t) => !known.contains(t.id)).toList();
+    if (fresh.isEmpty) return;
+    for (final t in fresh) {
+      known.add(t.id);
+    }
+    await prefs.setString(key, jsonEncode(known.toList()));
+    for (final t in fresh) {
+      if (t.createdBy == _uid) continue;
+      // Смотрим в этот чат на переднем плане — задачу видно в списке.
+      if (appInForeground && activeChatSpaceId == space.id) continue;
+      await NotificationService.instance.showSpaceTaskAdded(
+        noteId: t.id,
+        spaceId: space.id,
+        spaceName: space.name,
+        taskTitle: t.title.isEmpty ? t.content : t.title,
+        actorName: familyMemberDisplayName(
+            prefs.getString('$_kMembersPrefix${space.id}'), t.createdBy),
+      );
+    }
+  }
+
   Future<void> updateNote(String spaceId, FamilyNote note) async {
+    // Редактировать содержимое может только создатель задачи
+    // (как и удалять); отметка «выполнена» доступна всем участникам
+    // через toggleDone. Продублировано в firestore.rules (notes update).
+    if (note.createdBy != _uid) {
+      throw const RestAuthException(
+        'Редактировать задачу может только её создатель',
+      );
+    }
     final updated = note.copyWith(updatedBy: _uid);
     await _saveNote(spaceId, updated);
   }
@@ -838,6 +939,8 @@ class FamilyService {
     final list = await notes(spaceId)..removeWhere((n) => n.id == note.id);
     await prefs.setString('$_kNotesPrefix$spaceId',
         jsonEncode(list.map((n) => n.toMap()).toList()));
+    await NotificationService.instance.cancelSpaceTask(note.id,
+        forgetReminder: true);
     if (_synced) {
       try {
         await _remove(spaceId, 'notes', note.id);
@@ -912,6 +1015,19 @@ class FamilyService {
       ..add(note);
     await prefs.setString('$_kNotesPrefix$spaceId',
         jsonEncode(list.map((n) => n.toMap()).toList()));
+    if (note.done) {
+      await NotificationService.instance.cancelSpaceTask(note.id);
+    } else {
+      await NotificationService.instance.checkSpaceTaskReminder(
+        noteId: note.id,
+        spaceId: spaceId,
+        spaceName: _spaceNameOf(spaceId),
+        taskTitle: note.title.isEmpty ? note.content : note.title,
+        taskBody: note.title.isEmpty ? '' : note.content,
+        reminderDate: note.reminderDate,
+        done: note.done,
+      );
+    }
     if (_synced) {
       try {
         await _push(spaceId, 'notes', note.id, note.toFirestore());

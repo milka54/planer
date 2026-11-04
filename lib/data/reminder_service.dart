@@ -8,7 +8,8 @@ import 'cloud_service.dart';
 import 'models/standalone_reminder.dart';
 import 'notifications.dart';
 
-/// Напоминания без привязки к заметкам: разделы + ежегодный повтор.
+/// Напоминания без привязки к заметкам: разделы + повторы (годовые,
+/// каждые N дней, по дням недели).
 /// Local-first, с репликацией в Firestore (как и заметки).
 class ReminderService {
   ReminderService._();
@@ -83,7 +84,7 @@ class ReminderService {
 
     reminders.value = rem;
     sections.value = secs;
-    await _rolloverYearly();
+    await _rolloverRepeats();
     await _persistAll();
     await _rescheduleAll();
   }
@@ -216,14 +217,57 @@ class ReminderService {
     await update(r.copyWith(sectionId: sectionId, clearSection: sectionId == null));
   }
 
-  /// Ежегодные напоминания, чья дата прошла, переносятся на следующий год.
-  Future<void> _rolloverYearly() async {
+  /// Сливает импортированные напоминания/разделы с текущими: разделы —
+  /// по updatedAt, напоминания — по содержимому. Возвращает число
+  /// напоминаний, добавленных или обновлённых.
+  Future<int> importBatch({
+    required List<StandaloneReminder> incomingReminders,
+    required List<ReminderSection> incomingSections,
+  }) async {
+    final key = AuthService.instance.ownerKey;
+    var changed = 0;
+
+    final secMap = {for (final s in sections.value) s.id: s};
+    for (final s in incomingSections) {
+      final local = secMap[s.id];
+      if (local == null || s.updatedAt.isAfter(local.updatedAt)) {
+        secMap[s.id] = s;
+      }
+    }
+
+    final remMap = {for (final r in reminders.value) r.id: r};
+    final imported = <StandaloneReminder>[];
+    for (final r in incomingReminders) {
+      final local = remMap[r.id];
+      if (local == null || jsonEncode(local.toJson()) != jsonEncode(r.toJson())) {
+        remMap[r.id] = r;
+        imported.add(r);
+        changed++;
+      }
+    }
+
+    reminders.value = remMap.values.toList();
+    sections.value = secMap.values.toList();
+    await _persistAll();
+    await _rescheduleAll();
+
+    if (_synced) {
+      await CloudNotesService.instance.pushAllReminders(key, imported);
+    }
+    return changed;
+  }
+
+  /// Повторяющиеся напоминания, чья дата прошла, переносятся на следующее
+  /// срабатывание (годовщины, «каждые N дней», дни недели).
+  Future<void> _rolloverRepeats() async {
     final now = DateTime.now();
     var changed = false;
     final list = reminders.value.map((r) {
-      if (!r.yearly || r.fireAt.isAfter(now)) return r;
+      if (!r.hasRepeat || r.fireAt.isAfter(now)) return r;
+      final next = r.nextOccurrence(now);
+      if (next == null) return r;
       changed = true;
-      return r.copyWith(fireAt: r.nextYear(), done: false);
+      return r.copyWith(fireAt: next, done: false);
     }).toList();
     if (!changed) return;
     reminders.value = list;
@@ -233,7 +277,7 @@ class ReminderService {
     if (_synced) {
       await CloudNotesService.instance.pushAllReminders(
         AuthService.instance.ownerKey,
-        list.where((r) => r.yearly).toList(),
+        list.where((r) => r.hasRepeat).toList(),
       );
     }
   }
@@ -340,15 +384,18 @@ class ReminderService {
 
   Future<void> _schedule(StandaloneReminder r) async {
     try {
-      if (r.done || r.fireAt.isBefore(DateTime.now())) {
+      if (r.done) {
         await NotificationService.instance.cancelForNote(r.id);
         return;
       }
       await NotificationService.instance.scheduleForNote(
         noteId: r.id,
-        title: r.title,
-        body: r.body ?? 'Напоминание из Планера',
+        title: r.title.isEmpty
+            ? 'Напоминание'
+            : 'Напоминание: ${r.title}',
+        body: r.body ?? 'Пора посмотреть',
         when: r.fireAt,
+        payload: 'rem:${r.id}',
       );
     } catch (e) {
       debugPrint('standalone reminder schedule: $e');

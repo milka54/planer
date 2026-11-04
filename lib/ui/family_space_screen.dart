@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/theme.dart';
 import '../data/auth_service.dart';
@@ -14,9 +15,16 @@ import 'widgets.dart';
 
 /// Экран пространства: задачи-чеклист + чат участников.
 class FamilySpaceScreen extends StatefulWidget {
-  const FamilySpaceScreen({super.key, required this.space});
+  const FamilySpaceScreen({
+    super.key,
+    required this.space,
+    this.initialTab = 0,
+  });
 
   final FamilySpace space;
+
+  /// 0 — задачи, 1 — чат (из уведомления открываем нужную вкладку).
+  final int initialTab;
 
   @override
   State<FamilySpaceScreen> createState() => _FamilySpaceScreenState();
@@ -34,8 +42,12 @@ class _FamilySpaceScreenState extends State<FamilySpaceScreen> {
   @override
   void initState() {
     super.initState();
+    _tab = widget.initialTab;
     // Чат этого пространства открыт — фоновый опрос не уведомляет о нём.
+    // Копия в prefs — её видит фоновая проверка (background_service.dart).
     FamilyService.activeChatSpaceId = widget.space.id;
+    unawaited(SharedPreferences.getInstance().then(
+        (p) => p.setString('active_chat_space_v1', widget.space.id)));
     FamilyService.instance.markRead(widget.space.id);
     _reload().then((_) {
       // Живые обновления чата, пока экран открыт.
@@ -50,6 +62,8 @@ class _FamilySpaceScreenState extends State<FamilySpaceScreen> {
     _pollTimer?.cancel();
     if (FamilyService.activeChatSpaceId == widget.space.id) {
       FamilyService.activeChatSpaceId = null;
+      unawaited(SharedPreferences.getInstance()
+          .then((p) => p.remove('active_chat_space_v1')));
     }
     _msgCtrl.dispose();
     super.dispose();
@@ -114,10 +128,11 @@ class _FamilySpaceScreenState extends State<FamilySpaceScreen> {
 
   /// Единая форма создания задачи: крупные поля, дата и время отдельными
   /// кнопками, окно не прячется за клавиатурой.
-  Future<void> _addNote() async {
-    final titleCtrl = TextEditingController();
-    final contentCtrl = TextEditingController();
-    DateTime? when;
+  Future<void> _addNote([FamilyNote? existing]) async {
+    final titleCtrl = TextEditingController(text: existing?.title ?? '');
+    final contentCtrl =
+        TextEditingController(text: existing?.content ?? '');
+    DateTime? when = existing?.reminderDate;
 
     final created = await showModalBottomSheet<bool>(
       context: context,
@@ -138,9 +153,10 @@ class _FamilySpaceScreenState extends State<FamilySpaceScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Новая задача',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+                Text(
+                  existing == null ? 'Новая задача' : 'Изменить задачу',
+                  style: const TextStyle(
+                      fontSize: 22, fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 16),
                 TextField(
@@ -149,9 +165,10 @@ class _FamilySpaceScreenState extends State<FamilySpaceScreen> {
                   textCapitalization: TextCapitalization.sentences,
                   style: const TextStyle(
                       fontSize: 18, fontWeight: FontWeight.w700),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Заголовок',
                     hintText: 'Что нужно сделать',
+                    suffixIcon: DictationSuffix(controller: titleCtrl),
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -161,9 +178,10 @@ class _FamilySpaceScreenState extends State<FamilySpaceScreen> {
                   maxLines: 8,
                   textCapitalization: TextCapitalization.sentences,
                   style: const TextStyle(fontSize: 16, height: 1.4),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Описание',
                     hintText: 'Подробности, список покупок, адрес…',
+                    suffixIcon: DictationSuffix(controller: contentCtrl),
                     alignLabelWithHint: true,
                   ),
                 ),
@@ -234,10 +252,10 @@ class _FamilySpaceScreenState extends State<FamilySpaceScreen> {
                       if (titleCtrl.text.trim().isEmpty) return;
                       Navigator.pop(ctx, true);
                     },
-                    child: const Text(
-                      'Создать',
-                      style:
-                          TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                    child: Text(
+                      existing == null ? 'Создать' : 'Сохранить',
+                      style: const TextStyle(
+                          fontSize: 17, fontWeight: FontWeight.w800),
                     ),
                   ),
                 ),
@@ -248,12 +266,24 @@ class _FamilySpaceScreenState extends State<FamilySpaceScreen> {
       ),
     );
     if (created != true || !mounted) return;
-    await FamilyService.instance.addNote(
-      spaceId: widget.space.id,
-      title: titleCtrl.text.trim(),
-      content: contentCtrl.text.trim(),
-      reminderDate: when,
-    );
+    if (existing != null) {
+      await FamilyService.instance.updateNote(
+        widget.space.id,
+        existing.copyWith(
+          title: titleCtrl.text.trim(),
+          content: contentCtrl.text.trim(),
+          reminderDate: when,
+          clearReminder: when == null,
+        ),
+      );
+    } else {
+      await FamilyService.instance.addNote(
+        spaceId: widget.space.id,
+        title: titleCtrl.text.trim(),
+        content: contentCtrl.text.trim(),
+        reminderDate: when,
+      );
+    }
     titleCtrl.dispose();
     contentCtrl.dispose();
     await _reload();
@@ -346,7 +376,13 @@ class _FamilySpaceScreenState extends State<FamilySpaceScreen> {
         showSnack(context, 'Ссылка скопирована');
       }
     } catch (e) {
-      if (mounted) showSnack(context, '$e');
+      debugPrint('inviteByLink: $e');
+      if (mounted) {
+        showSnack(
+          context,
+          'Не удалось создать ссылку. Обновите пространство (кнопка «Обновить») и попробуйте снова.',
+        );
+      }
     }
   }
 
@@ -458,7 +494,7 @@ class _FamilySpaceScreenState extends State<FamilySpaceScreen> {
                       m.displayName.isNotEmpty
                           ? m.displayName[0].toUpperCase()
                           : '?',
-                      style: const TextStyle(color: AppPalette.accent),
+                      style: TextStyle(color: AppPalette.accent),
                     ),
                   ),
                   title: Text(m.displayName),
@@ -678,7 +714,7 @@ class _FamilySpaceScreenState extends State<FamilySpaceScreen> {
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                                const Icon(Icons.people_rounded,
+                                Icon(Icons.people_rounded,
                                     size: 14, color: AppPalette.accentSoft),
                               ],
                             ),
@@ -803,7 +839,7 @@ class _FamilySpaceScreenState extends State<FamilySpaceScreen> {
               padding: const EdgeInsets.only(top: 40),
               child: Column(
                 children: [
-                  const Icon(Icons.checklist_rounded,
+                  Icon(Icons.checklist_rounded,
                       size: 48, color: AppPalette.accent),
                   const SizedBox(height: 12),
                   const Text(
@@ -889,7 +925,8 @@ class _FamilySpaceScreenState extends State<FamilySpaceScreen> {
                           ),
                         _Badge(
                           icon: Icons.person_rounded,
-                          text: _memberName(note.updatedBy),
+                          text:
+                              'создал(а) ${_memberName(note.createdBy)}',
                           color: AppPalette.sky,
                         ),
                       ],
@@ -945,10 +982,26 @@ class _FamilySpaceScreenState extends State<FamilySpaceScreen> {
                 'Создал(а): ${_memberName(note.createdBy)}',
                 style: TextStyle(color: Colors.white.withOpacity(0.6)),
               ),
-              Text(
-                'Обновил(а): ${_memberName(note.updatedBy)}',
-                style: TextStyle(color: Colors.white.withOpacity(0.6)),
-              ),
+              if (note.done && note.doneBy != null)
+                Text(
+                  'Выполнил(а): ${_memberName(note.doneBy)}'
+                  '${note.doneAt != null ? ' · ${DateFormat('d MMM yyyy, HH:mm').format(note.doneAt!)}' : ''}',
+                  style: TextStyle(color: Colors.white.withOpacity(0.6)),
+                ),
+              if (note.createdBy == AuthService.instance.userKey.value) ...[
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _addNote(note);
+                    },
+                    icon: const Icon(Icons.edit_rounded),
+                    label: const Text('Изменить'),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -1000,7 +1053,8 @@ class _FamilySpaceScreenState extends State<FamilySpaceScreen> {
                   controller: _msgCtrl,
                   textInputAction: TextInputAction.send,
                   onSubmitted: (_) => _send(),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
+                    suffixIcon: DictationSuffix(controller: _msgCtrl),
                     hintText: 'Сообщение…',
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.all(Radius.circular(18)),

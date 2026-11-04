@@ -51,6 +51,14 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
     }
   }
 
+  void _openImage(String path) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ImageViewerScreen(path: path),
+      ),
+    );
+  }
+
   Future<void> _pickSection(BuildContext context, Note note) async {
     final sections = NotesRepository.instance.allSections;
     final selected = await showModalBottomSheet<String?>(
@@ -89,7 +97,7 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
                   ),
                   title: Text(s.title),
                   trailing: note.sectionId == s.id
-                      ? const Icon(Icons.check_rounded, color: AppPalette.accent)
+                      ? Icon(Icons.check_rounded, color: AppPalette.accent)
                       : null,
                   onTap: () => Navigator.pop(ctx, s.id),
                 ),
@@ -260,6 +268,36 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
               ],
             ),
           ),
+          if (note.hasImages) ...[
+            const SizedBox(height: 18),
+            const SectionTitle('ФОТО'),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                for (final path in note.imagePaths)
+                  GestureDetector(
+                    onTap: () => _openImage(path),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(
+                        File(path),
+                        width: 108,
+                        height: 108,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 108,
+                          height: 108,
+                          color: Colors.black12,
+                          child: const Icon(Icons.broken_image_outlined),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
           if (note.hasVoice) ...[
             const SizedBox(height: 18),
             const SectionTitle('ГОЛОСОВЫЕ ЗАМЕТКИ'),
@@ -316,7 +354,7 @@ class _NoteDetailScreenState extends State<NoteDetailScreen> {
                         color: AppPalette.accent.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: const PulseIcon(
+                      child: PulseIcon(
                         icon: Icons.alarm_on_rounded,
                         color: AppPalette.accent,
                         size: 22,

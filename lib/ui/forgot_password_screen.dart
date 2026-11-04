@@ -74,7 +74,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             color: AppPalette.accent.withOpacity(0.18),
             borderRadius: BorderRadius.circular(28),
           ),
-          child: const Icon(
+          child: Icon(
             Icons.lock_reset_rounded,
             size: 42,
             color: AppPalette.accent,
@@ -124,7 +124,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(
+              Icon(
                 Icons.info_outline_rounded,
                 color: AppPalette.accentSoft,
                 size: 20,
@@ -240,7 +240,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         const SizedBox(height: 12),
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text(
+          child: Text(
             'Вернуться ко входу',
             style: TextStyle(color: AppPalette.accentSoft),
           ),
@@ -265,7 +265,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             ),
             child: Text(
               n,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w800,
                 color: AppPalette.accent,

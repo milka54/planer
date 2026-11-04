@@ -205,6 +205,7 @@ class NotesRepository {
     DateTime? reminderDate,
     int colorIndex = 0,
     List<String>? voicePaths,
+    List<String>? imagePaths,
   }) async {
     final key = AuthService.instance.ownerKey;
     final note = Note.create(
@@ -215,6 +216,7 @@ class NotesRepository {
       reminderDate: reminderDate,
       colorIndex: colorIndex,
       voicePaths: voicePaths,
+      imagePaths: imagePaths,
     );
     final list = [...notes.value, note];
     await _persist(list, key);
@@ -237,6 +239,7 @@ class NotesRepository {
       archived: note.archived,
       sectionId: note.sectionId,
       voicePaths: note.voicePaths,
+      imagePaths: note.imagePaths,
     );
     final list = notes.value.map((n) => n.id == updated.id ? updated : n).toList();
     await _persist(list, key);
@@ -251,6 +254,56 @@ class NotesRepository {
     final list =
         notes.value.map((n) => n.id == updated.id ? updated : n).toList();
     await _persist(list, key);
+  }
+
+  /// Сливает импортированные заметки/разделы с текущими: по id побеждает
+  /// более свежий updatedAt, новые — добавляются. Возвращает число заметок,
+  /// добавленных или обновлённых (разделы сливаются молча).
+  Future<int> importBatch({
+    required List<Note> incomingNotes,
+    required List<NoteSection> incomingSections,
+  }) async {
+    final key = AuthService.instance.ownerKey;
+    var changed = 0;
+
+    final secMap = {for (final s in sections.value) s.id: s};
+    for (final s in incomingSections) {
+      final local = secMap[s.id];
+      if (local == null || s.updatedAt.isAfter(local.updatedAt)) {
+        secMap[s.id] = s;
+      }
+    }
+
+    final noteMap = {for (final n in notes.value) n.id: n};
+    final imported = <Note>[];
+    for (final n in incomingNotes) {
+      final local = noteMap[n.id];
+      if (local == null || n.updatedAt.isAfter(local.updatedAt)) {
+        noteMap[n.id] = n;
+        imported.add(n);
+        changed++;
+      }
+    }
+
+    final list = noteMap.values.toList();
+    final secs = secMap.values.toList();
+    await _persist(list, key);
+    await _persistSections(secs, key);
+    notes.value = list;
+    sections.value = secs;
+
+    try {
+      await NotificationService.instance.rescheduleAllForNotes(
+        list.where((n) => n.hasReminder),
+      );
+    } catch (_) {}
+
+    if (!AuthService.instance.isGuest.value && key != 'guest') {
+      for (final n in imported) {
+        await CloudNotesService.instance.upsert(key, n);
+      }
+    }
+    return changed;
   }
 
   Future<void> delete(Note note) async {
@@ -314,9 +367,12 @@ class NotesRepository {
       if (note.reminderDate != null) {
         await NotificationService.instance.scheduleForNote(
           noteId: note.id,
-          title: note.title,
+          title: note.title.isEmpty
+              ? 'Напоминание'
+              : 'Напоминание: ${note.title}',
           body: note.preview,
           when: note.reminderDate!,
+          payload: 'note:${note.id}',
         );
       } else {
         await NotificationService.instance.cancelForNote(note.id);

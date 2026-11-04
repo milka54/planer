@@ -27,3 +27,6 @@ rustore-release/
 .DS_Store
 Thumbs.db
 *.log
+
+# Старые бинарники сборок (не тащим в git)
+черновое/старые-версии/

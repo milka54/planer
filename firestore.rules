@@ -65,9 +65,15 @@ service cloud.firestore {
       match /notes/{noteId} {
         allow read: if isSignedIn() && isMember(spaceId);
         allow create: if isSignedIn() && isMember(spaceId);
-        // Править может любой участник (галочка «выполнено», описание)…
-        allow update: if isSignedIn() && isMember(spaceId);
-        // …а удалить — только создатель задачи.
+        // Содержимое правит только создатель задачи; любой участник
+        // может лишь отметить выполнение (done/doneBy/doneAt).
+        // Продублировано guard-ом в FamilyService.updateNote.
+        allow update: if isSignedIn() && isMember(spaceId) && (
+          resource.data.createdBy == request.auth.uid ||
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['done', 'doneBy', 'doneAt', 'updatedBy', 'updatedAt'])
+        );
+        // Удалить — только создатель задачи.
         allow delete: if isSignedIn() && isMember(spaceId) &&
           resource.data.createdBy == request.auth.uid;
       }
@@ -96,9 +102,12 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn() &&
         request.resource.data.spaceId != null &&
-        isOwner(request.resource.data.spaceId);
+        (isOwner(request.resource.data.spaceId) ||
+         isMember(request.resource.data.spaceId));
       allow update: if false;
-      allow delete: if isSignedIn() && isOwner(resource.data.spaceId);
+      allow delete: if isSignedIn() &&
+        (isOwner(resource.data.spaceId) ||
+         resource.data.createdBy == request.auth.uid);
     }
 
     // ── Почтовый ящик приглашений ───────────────────────────
@@ -140,9 +149,13 @@ service cloud.firestore {
     }
 
     function isOwner(spaceId) {
-      return isSignedIn() &&
-        exists(memberPath(spaceId)) &&
-        get(memberPath(spaceId)).data.role == 'owner';
+      // Фолбэк на создателя: у старых пространств в карточке участника
+      // может отсутствовать role.
+      return isSignedIn() && (
+        isSpaceCreator(spaceId) ||
+        (exists(memberPath(spaceId)) &&
+         get(memberPath(spaceId)).data.role == 'owner')
+      );
     }
 
     // Есть приглашение на email текущего пользователя.

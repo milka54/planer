@@ -3,10 +3,13 @@ import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../core/theme.dart';
 import '../data/models/note.dart';
 import '../data/notes_repository.dart';
+import '../data/speech_service.dart';
+import '../data/storage.dart';
 import '../data/voice_service.dart';
 import 'reminder_time_picker.dart';
 import 'widgets.dart';
@@ -24,10 +27,13 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   late final TextEditingController _title;
   late final TextEditingController _content;
   late final List<String> _voicePaths;
+  late final List<String> _imagePaths;
   DateTime? _reminder;
   int _colorIndex = 0;
   bool _saving = false;
   bool _recording = false;
+  String? _dictating;
+  String _dictBuf = '';
   int _recordingSeconds = 0;
   Timer? _recTimer;
 
@@ -41,6 +47,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     _title = TextEditingController(text: n?.title ?? '');
     _content = TextEditingController(text: n?.content ?? '');
     _voicePaths = [...?n?.voicePaths];
+    _imagePaths = [...?n?.imagePaths];
     _reminder = n?.reminderDate;
     _colorIndex = n?.colorIndex ?? 0;
     _player.onPlayerComplete.listen((_) {
@@ -126,6 +133,105 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     }
   }
 
+  Widget _micButton(String field, TextEditingController ctrl) {
+    final active = _dictating == field;
+    return IconButton(
+      tooltip: 'Голосовой ввод',
+      icon: Icon(
+        active ? Icons.mic_rounded : Icons.mic_none_rounded,
+        color: active ? AppPalette.rose : null,
+      ),
+      onPressed: () => _toggleDictation(field, ctrl),
+    );
+  }
+
+  Future<void> _toggleDictation(String field, TextEditingController ctrl) async {
+    if (_dictating == field) {
+      await SpeechService.instance.stop();
+      if (mounted) setState(() => _dictating = null);
+      return;
+    }
+    await SpeechService.instance.stop();
+    _dictBuf = ctrl.text.trim();
+    final ok = await SpeechService.instance.start(
+      onResult: (text, finalResult) {
+        ctrl.text = _dictBuf.isEmpty ? text : '$_dictBuf $text';
+        if (finalResult) _dictBuf = ctrl.text;
+      },
+      onStopped: () {
+        if (mounted) setState(() => _dictating = null);
+      },
+    );
+    if (!ok) {
+      if (mounted) {
+        showSnack(context, 'Голосовой ввод недоступен на этом устройстве');
+      }
+      return;
+    }
+    if (mounted) setState(() => _dictating = field);
+  }
+
+  Future<void> _addPhoto(ImageSource source) async {
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: source,
+        maxWidth: 1600,
+        imageQuality: 85,
+      );
+      if (picked == null) return;
+      final saved =
+          await StorageService.instance.persistNoteAttachment(File(picked.path));
+      if (saved == null) return;
+      setState(() => _imagePaths.add(saved));
+    } catch (e) {
+      if (mounted) showSnack(context, 'Не удалось добавить фото');
+    }
+  }
+
+  Future<void> _removeImage(String path) async {
+    await StorageService.instance.deleteNoteAttachment(path);
+    setState(() => _imagePaths.remove(path));
+  }
+
+  void _openImage(String path) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ImageViewerScreen(path: path),
+      ),
+    );
+  }
+
+  void _pickPhotoSource() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetCtx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Галерея'),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                _addPhoto(ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Камера'),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                _addPhoto(ImageSource.camera);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   String _fmtDuration(int seconds) {
     final m = (seconds ~/ 60).toString().padLeft(2, '0');
     final s = (seconds % 60).toString().padLeft(2, '0');
@@ -136,8 +242,11 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     final title = _title.text.trim();
     final content = _content.text.trim();
 
-    if (title.isEmpty && content.isEmpty && _voicePaths.isEmpty) {
-      showSnack(context, 'Добавьте заголовок, текст или голос');
+    if (title.isEmpty &&
+        content.isEmpty &&
+        _voicePaths.isEmpty &&
+        _imagePaths.isEmpty) {
+      showSnack(context, 'Добавьте заголовок, текст, голос или фото');
       return;
     }
     setState(() => _saving = true);
@@ -150,6 +259,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         reminderDate: _reminder,
         colorIndex: _colorIndex,
         voicePaths: _voicePaths,
+        imagePaths: _imagePaths,
       );
     } else {
       final base = widget.existing!;
@@ -166,6 +276,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         ownerKey: base.ownerKey,
         sectionId: base.sectionId,
         voicePaths: _voicePaths,
+        imagePaths: _imagePaths,
       );
       await NotesRepository.instance.replaceInMemory(updated);
       await NotesRepository.instance.setReminder(updated, _reminder);
@@ -241,10 +352,11 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                 fontWeight: FontWeight.w800,
                 letterSpacing: -0.4,
               ),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText: 'Заголовок (например: Приём к врачу)',
                 filled: false,
                 border: InputBorder.none,
+                suffixIcon: _micButton('title', _title),
               ),
             ),
           ),
@@ -279,12 +391,101 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
               maxLines: 10,
               minLines: 5,
               style: const TextStyle(fontSize: 16, height: 1.4),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText: 'Напишите заметку…',
                 border: InputBorder.none,
                 isDense: true,
+                suffixIcon: _micButton('content', _content),
               ),
             ),
+          ),
+          const SizedBox(height: 18),
+          // Фото-вложения
+          Text(
+            'Фото',
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 15,
+              letterSpacing: 0.2,
+              color: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.color
+                  ?.withValues(alpha: 0.75),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              for (final path in _imagePaths)
+                GestureDetector(
+                  onTap: () => _openImage(path),
+                  child: Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.file(
+                          File(path),
+                          width: 88,
+                          height: 88,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            width: 88,
+                            height: 88,
+                            color: Colors.black12,
+                            child: const Icon(Icons.broken_image_outlined),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        top: 2,
+                        right: 2,
+                        child: GestureDetector(
+                          onTap: () => _removeImage(path),
+                          child: Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: const BoxDecoration(
+                              color: Colors.black54,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.close,
+                                size: 16, color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              Material(
+                color: color.withOpacity(0.14),
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: _pickPhotoSource,
+                  child: SizedBox(
+                    width: 88,
+                    height: 88,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.add_photo_alternate_outlined, color: color),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Фото',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: color,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 18),
           // Голосовые вложения

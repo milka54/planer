@@ -1,12 +1,16 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:firebase_core/firebase_core.dart';
+import 'package:tray_manager/tray_manager.dart';
+import 'package:window_manager/window_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 import 'core/theme.dart';
 import 'data/auth_service.dart';
+import 'data/background_service.dart';
 import 'data/notifications.dart';
 import 'data/notes_repository.dart';
 import 'data/reminder_service.dart';
@@ -32,6 +36,7 @@ Future<void> main() async {
 
   await AuthService.instance.init();
   await ReminderService.instance.load();
+  unawaited(BackgroundService.instance.init());
 
   themeNotifier.value = ThemeOption.byId(StorageService.instance.themeId);
   applyBg(
@@ -46,6 +51,14 @@ Future<void> main() async {
     applyBg(BgOption.classic);
     await StorageService.instance.setBgId('classic');
     await StorageService.instance.clearCustomBgPath();
+  }
+
+  if (Platform.isWindows) {
+    try {
+      await _DesktopShell.instance.init();
+    } catch (e) {
+      debugPrint('desktop shell: $e');
+    }
   }
 
   runApp(const PlanerApp());
@@ -89,6 +102,8 @@ class PlanerApp extends StatelessWidget {
                     key: ValueKey('${theme.id}_${bgOpt.id}_$asset'),
                     assetPath: isFile ? null : fallbackAsset,
                     filePath: isFile ? asset : null,
+                    gradientColors:
+                        bgOpt.isGradient ? bgOpt.gradientColors : null,
                     dim: true,
                     child: const _RootGate(),
                   );
@@ -209,5 +224,61 @@ class ModePickerScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// ПК-оболочка: закрытие окна сворачивает в трей, уведомления продолжают
+/// приходить (таймеры + опрос чата работают, пока процесс жив).
+class _DesktopShell with TrayListener, WindowListener {
+  _DesktopShell._();
+  static final _DesktopShell instance = _DesktopShell._();
+
+  Future<void> init() async {
+    await windowManager.ensureInitialized();
+    await windowManager.setPreventClose(true);
+    windowManager.addListener(this);
+
+    final exeDir = File(Platform.resolvedExecutable).parent.path;
+    await trayManager.setIcon(
+        '$exeDir/data/flutter_assets/assets/tray_icon.ico');
+    await trayManager.setToolTip('Планер');
+    await trayManager.setContextMenu(Menu(items: [
+      MenuItem(key: 'show', label: 'Открыть Планер'),
+      MenuItem.separator(),
+      MenuItem(key: 'exit', label: 'Выход'),
+    ]));
+    trayManager.addListener(this);
+  }
+
+  Future<void> _show() async {
+    await windowManager.show();
+    await windowManager.focus();
+  }
+
+  @override
+  void onWindowClose() {
+    windowManager.hide();
+  }
+
+  @override
+  void onTrayIconMouseDown() {
+    _show();
+  }
+
+  @override
+  void onTrayIconRightMouseDown() {
+    trayManager.popUpContextMenu();
+  }
+
+  @override
+  void onTrayMenuItemClick(MenuItem menuItem) async {
+    if (menuItem.key == 'show') {
+      await _show();
+    } else if (menuItem.key == 'exit') {
+      await windowManager.setPreventClose(false);
+      await trayManager.destroy();
+      await windowManager.destroy();
+      exit(0);
+    }
   }
 }

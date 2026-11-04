@@ -72,6 +72,37 @@ class StorageService {
     }
   }
 
+  /// Копирует фото/вложение заметки в постоянное хранилище приложения.
+  /// image_picker отдаёт временный путь — он пропадает после чистки кэша.
+  Future<String?> persistNoteAttachment(File source) async {
+    try {
+      if (!await source.exists()) return null;
+      final docs = await getApplicationDocumentsDirectory();
+      final dir = Directory('${docs.path}/attachments');
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+      final name = source.path.split(RegExp(r'[\\/]')).last;
+      final ext =
+          name.contains('.') ? name.split('.').last.toLowerCase() : 'bin';
+      final base = DateTime.now().millisecondsSinceEpoch;
+      final dest = File('${dir.path}/a_$base.$ext');
+      await source.copy(dest.path);
+      return dest.path;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Удаляет файл вложения, если он лежит в хранилище приложения.
+  Future<void> deleteNoteAttachment(String path) async {
+    try {
+      if (!path.contains('attachments')) return;
+      final f = File(path);
+      if (await f.exists()) await f.delete();
+    } catch (_) {}
+  }
+
   String get ownerKey => _prefs.getString(_kOwnerKey) ?? 'guest';
   Future<void> setOwnerKey(String key) => _prefs.setString(_kOwnerKey, key);
 

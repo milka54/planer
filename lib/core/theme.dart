@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
 
 class AppPalette {
+  /// Активная тема — источник акцентных цветов. Меняется в
+  /// buildTheme() — каждая смена оформления проходит через неё.
+  static ThemeOption _active = ThemeOption.night;
+
+  static void activate(ThemeOption option) => _active = option;
+
+  static Color get accent => _active.accent;
+  static Color get accentSoft => _active.accentSoft;
+
   static const ink = Color(0xFF1B2A4A);
   static const inkDeep = Color(0xFF121C33);
   static const paper = Color(0xFFF7F3EC);
   static const paperCard = Color(0xFFFFFCF7);
-  static const accent = Color(0xFFE8A54B);
-  static const accentSoft = Color(0xFFF3C77B);
   static const mint = Color(0xFF5BB8A6);
   static const rose = Color(0xFFD97777);
   static const sky = Color(0xFF6B9FD4);
@@ -20,6 +27,11 @@ class AppPalette {
     Color(0xFF8B7EC8),
     Color(0xFFB8956A),
     Color(0xFF7BAE7F),
+    Color(0xFFE07A5F),
+    Color(0xFF3D5A80),
+    Color(0xFF98C1D9),
+    Color(0xFFEE6C4D),
+    Color(0xFF293241),
   ];
 }
 
@@ -30,6 +42,11 @@ class ThemeOption {
   final String subtitle;
   final bool isDark;
   final Color seed;
+
+  /// Фирменные цвета темы: яркий акцент и его светлая вариация.
+  /// Видны везде: FAB, кнопки, иконки, индикаторы.
+  final Color accent;
+  final Color accentSoft;
   final String? backgroundAsset;
 
   const ThemeOption({
@@ -38,6 +55,8 @@ class ThemeOption {
     required this.subtitle,
     required this.isDark,
     required this.seed,
+    required this.accent,
+    required this.accentSoft,
     this.backgroundAsset,
   });
 
@@ -47,6 +66,8 @@ class ThemeOption {
     subtitle: 'Тёмная, для вечера',
     isDark: true,
     seed: AppPalette.sky,
+    accent: const Color(0xFFE8A54B),
+    accentSoft: const Color(0xFFF3C77B),
     backgroundAsset: 'assets/backgrounds/bg_night.png',
   );
 
@@ -56,6 +77,8 @@ class ThemeOption {
     subtitle: 'Светлая и спокойная',
     isDark: false,
     seed: AppPalette.ink,
+    accent: const Color(0xFF3A6EA5),
+    accentSoft: const Color(0xFF7FA8D4),
     backgroundAsset: 'assets/backgrounds/bg_classic.png',
   );
 
@@ -64,7 +87,9 @@ class ThemeOption {
     name: 'Графит',
     subtitle: 'Строгая тёмная',
     isDark: true,
-    seed: const Color(0xFF6B7280),
+    seed: Color(0xFF6B7280),
+    accent: const Color(0xFF9AA5B1),
+    accentSoft: const Color(0xFFC3CCD6),
     backgroundAsset: 'assets/backgrounds/bg_business.png',
   );
 
@@ -73,11 +98,84 @@ class ThemeOption {
     name: 'Крем',
     subtitle: 'Тёплая светлая',
     isDark: false,
-    seed: const Color(0xFFB8956A),
+    seed: Color(0xFFB8956A),
+    accent: const Color(0xFFB8713E),
+    accentSoft: const Color(0xFFD4A06B),
     backgroundAsset: 'assets/backgrounds/bg_sunset.png',
   );
 
-  static const all = [night, day, graphite, cream];
+  static const lavender = ThemeOption(
+    id: 'lavender',
+    name: 'Лаванда',
+    subtitle: 'Сиреневая, мягкая',
+    isDark: true,
+    seed: Color(0xFF9B8AE0),
+    accent: const Color(0xFF9B8AE0),
+    accentSoft: const Color(0xFFBCA9F5),
+  );
+
+  static const ocean = ThemeOption(
+    id: 'ocean',
+    name: 'Океан',
+    subtitle: 'Глубокая бирюза',
+    isDark: true,
+    seed: Color(0xFF2EC4B6),
+    accent: const Color(0xFF2EC4B6),
+    accentSoft: const Color(0xFF6FDCD0),
+  );
+
+  static const forest = ThemeOption(
+    id: 'forest',
+    name: 'Лес',
+    subtitle: 'Спокойная зелёная',
+    isDark: true,
+    seed: Color(0xFF52B788),
+    accent: const Color(0xFF52B788),
+    accentSoft: const Color(0xFF86D3AC),
+  );
+
+  static const rose = ThemeOption(
+    id: 'rose',
+    name: 'Роза',
+    subtitle: 'Нежная светлая',
+    isDark: false,
+    seed: Color(0xFFE8889B),
+    accent: const Color(0xFFE06B84),
+    accentSoft: const Color(0xFFF0A3B4),
+  );
+
+  static const sunset = ThemeOption(
+    id: 'sunset',
+    name: 'Закат',
+    subtitle: 'Тёплый оранжевый',
+    isDark: false,
+    seed: Color(0xFFF4845F),
+    accent: const Color(0xFFF4724B),
+    accentSoft: const Color(0xFFF9A078),
+  );
+
+  static const midnight = ThemeOption(
+    id: 'midnight',
+    name: 'Полночь',
+    subtitle: 'Глубокий индиго',
+    isDark: true,
+    seed: Color(0xFF5B6CFF),
+    accent: const Color(0xFF6C7CFF),
+    accentSoft: const Color(0xFF9BA7FF),
+  );
+
+  static const all = [
+    night,
+    day,
+    graphite,
+    cream,
+    lavender,
+    ocean,
+    forest,
+    rose,
+    sunset,
+    midnight,
+  ];
 
   static ThemeOption byId(String id) {
     for (final t in all) {
@@ -94,12 +192,19 @@ class BgOption {
   final String? assetPath;
   final bool isCustom;
 
+  /// Градиентная заливка (когда нет картинки).
+  final List<Color>? gradientColors;
+
   const BgOption({
     required this.id,
     required this.name,
     this.assetPath,
     this.isCustom = false,
+    this.gradientColors,
   });
+
+  bool get isGradient =>
+      gradientColors != null && gradientColors!.length >= 2;
 
   /// Сплошной цвет темы — без картинки.
   static const none = BgOption(id: 'none', name: 'Сплошной цвет');
@@ -134,6 +239,62 @@ class BgOption {
     assetPath: 'assets/backgrounds/bg_sunset.png',
   );
 
+  // ── Градиенты ────────────────────────────────────────────────
+
+  static const gradSunset = BgOption(
+    id: 'grad_sunset',
+    name: 'Градиент «Закат»',
+    gradientColors: [Color(0xFFFF9A5A), Color(0xFFFF5E62), Color(0xFF8A2387)],
+  );
+
+  static const gradOcean = BgOption(
+    id: 'grad_ocean',
+    name: 'Градиент «Океан»',
+    gradientColors: [Color(0xFF2E3192), Color(0xFF1BFFFF), Color(0xFF48C6EF)],
+  );
+
+  static const gradLavender = BgOption(
+    id: 'grad_lavender',
+    name: 'Градиент «Лаванда»',
+    gradientColors: [Color(0xFF8E2DE2), Color(0xFFDA22FF), Color(0xFFFFC8DD)],
+  );
+
+  static const gradForest = BgOption(
+    id: 'grad_forest',
+    name: 'Градиент «Лес»',
+    gradientColors: [Color(0xFF134E5E), Color(0xFF71B280), Color(0xFFD7F5E2)],
+  );
+
+  static const gradRose = BgOption(
+    id: 'grad_rose',
+    name: 'Градиент «Роза»',
+    gradientColors: [Color(0xFFFFAFBD), Color(0xFFFFC3A0), Color(0xFFFFE29F)],
+  );
+
+  static const gradMidnight = BgOption(
+    id: 'grad_midnight',
+    name: 'Градиент «Полночь»',
+    gradientColors: [Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364)],
+  );
+
+  static const gradMint = BgOption(
+    id: 'grad_mint',
+    name: 'Градиент «Мята»',
+    gradientColors: [Color(0xFF93F9B9), Color(0xFF1D976C), Color(0xFF0B6E4F)],
+  );
+
+  static const gradMono = BgOption(
+    id: 'grad_mono',
+    name: 'Градиент «Моно»',
+    gradientColors: [Color(0xFF232526), Color(0xFF414345), Color(0xFF6E6E6E)],
+  );
+
+  static const gradPeach = BgOption(
+    id: 'grad_peach',
+    name: 'Градиент «Персик»',
+    gradientColors: [Color(0xFFFFECD2), Color(0xFFFCB69F), Color(0xFFFF8177)],
+  );
+
   static const gallery = BgOption(
     id: 'gallery',
     name: 'Моё фото',
@@ -147,6 +308,15 @@ class BgOption {
     business,
     nature,
     sunset,
+    gradSunset,
+    gradOcean,
+    gradLavender,
+    gradForest,
+    gradRose,
+    gradMidnight,
+    gradMint,
+    gradMono,
+    gradPeach,
     gallery,
   ];
 
@@ -158,13 +328,16 @@ class BgOption {
   }
 
   String? resolve({String? customPath}) {
-    if (id == 'none') return null;
+    if (id == 'none' || isGradient) return null;
     if (id == 'gallery') return customPath;
     return assetPath;
   }
 }
 
 ThemeData buildTheme(ThemeOption option) {
+  // Палитра AppPalette следует за темой: акцентные цвета меняются
+  // вместе с оформлением в настройках.
+  AppPalette.activate(option);
   final scheme = ColorScheme.fromSeed(
     seedColor: option.seed,
     brightness: option.isDark ? Brightness.dark : Brightness.light,

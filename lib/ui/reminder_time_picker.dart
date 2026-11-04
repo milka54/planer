@@ -2,6 +2,149 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../core/theme.dart';
+import '../data/models/standalone_reminder.dart';
+
+/// Правило повтора для формы напоминания.
+typedef RepeatRule = ({
+  String type,
+  int every,
+  List<int> weekdays,
+});
+
+/// Диалог выбора повтора: без повтора / каждый год / каждые N дней / дни недели.
+/// Возвращает правило или null (отмена).
+Future<RepeatRule?> showRepeatRulePicker(
+  BuildContext context, {
+  required RepeatRule initial,
+}) {
+  var type = initial.type;
+  var every = initial.every;
+  var days = {...initial.weekdays};
+  final everyCtrl = TextEditingController(text: '${initial.every}');
+
+  return showDialog<RepeatRule>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setDialog) {
+        const names = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          title: const Text('Повтор'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                RadioListTile<String>(
+                  value: StandaloneReminder.repeatNone,
+                  groupValue: type,
+                  dense: true,
+                  title: const Text('Без повтора'),
+                  onChanged: (v) => setDialog(() => type = v!),
+                ),
+                RadioListTile<String>(
+                  value: StandaloneReminder.repeatYearly,
+                  groupValue: type,
+                  dense: true,
+                  title: const Text('Каждый год'),
+                  subtitle: const Text('Дни рождения, годовщины'),
+                  onChanged: (v) => setDialog(() => type = v!),
+                ),
+                RadioListTile<String>(
+                  value: StandaloneReminder.repeatEveryN,
+                  groupValue: type,
+                  dense: true,
+                  title: const Text('Каждые N дней'),
+                  onChanged: (v) => setDialog(() => type = v!),
+                ),
+                if (type == StandaloneReminder.repeatEveryN)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 48, bottom: 8),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 64,
+                          child: TextField(
+                            controller: everyCtrl,
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              border: OutlineInputBorder(),
+                            ),
+                            onChanged: (v) {
+                              final n = int.tryParse(v);
+                              if (n != null && n > 0) every = n;
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        const Text('дней'),
+                      ],
+                    ),
+                  ),
+                RadioListTile<String>(
+                  value: StandaloneReminder.repeatWeekly,
+                  groupValue: type,
+                  dense: true,
+                  title: const Text('По дням недели'),
+                  onChanged: (v) => setDialog(() => type = v!),
+                ),
+                if (type == StandaloneReminder.repeatWeekly)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 40, bottom: 8),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: List.generate(7, (i) {
+                        final day = i + 1;
+                        final selected = days.contains(day);
+                        return FilterChip(
+                          label: Text(names[i]),
+                          selected: selected,
+                          visualDensity: VisualDensity.compact,
+                          onSelected: (v) => setDialog(() {
+                            if (v) {
+                              days.add(day);
+                            } else {
+                              days.remove(day);
+                            }
+                          }),
+                        );
+                      }),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, null),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (type == StandaloneReminder.repeatEveryN &&
+                    (every < 1 || every > 365)) {
+                  return;
+                }
+                if (type == StandaloneReminder.repeatWeekly && days.isEmpty) {
+                  return;
+                }
+                Navigator.pop(
+                  ctx,
+                  (type: type, every: every, weekdays: days.toList()..sort()),
+                );
+              },
+              child: const Text('Готово'),
+            ),
+          ],
+        );
+      },
+    ),
+  );
+}
 
 /// Диалог установки напоминания с ОТДЕЛЬНЫМИ полями «Дата» и «Время».
 ///
@@ -34,7 +177,7 @@ Future<DateTime?> showReminderDateTimePicker(
           ),
           title: Row(
             children: [
-              const Icon(Icons.alarm_add_rounded,
+              Icon(Icons.alarm_add_rounded,
                   color: AppPalette.accent, size: 22),
               const SizedBox(width: 8),
               const Text('Напоминание'),

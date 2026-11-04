@@ -100,7 +100,7 @@ class _FamilyTabState extends State<FamilyTab> {
                         color: AppPalette.accent.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.mail_rounded,
                         color: AppPalette.accent,
                       ),
@@ -219,7 +219,7 @@ class _FamilyTabState extends State<FamilyTab> {
                           ),
                           borderRadius: BorderRadius.circular(30),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.groups_rounded,
                           size: 42,
                           color: AppPalette.accent,
