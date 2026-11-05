@@ -228,11 +228,7 @@ class SectionTitle extends StatelessWidget {
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 1.4,
-                color: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.color
-                    ?.withOpacity(0.75),
+                color: AppPalette.accentSoft.withOpacity(0.9),
               ),
             ),
           ),
@@ -285,7 +281,8 @@ class PrimaryButton extends StatelessWidget {
             onPressed: loading ? null : onPressed,
             style: FilledButton.styleFrom(
               backgroundColor: AppPalette.accent,
-              foregroundColor: AppPalette.inkDeep,
+              foregroundColor:
+                  Theme.of(context).colorScheme.onPrimary,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(18),
               ),

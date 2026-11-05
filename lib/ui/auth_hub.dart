@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
 import '../data/auth_service.dart';
+import '../data/family_service.dart';
 import '../data/notes_repository.dart';
 import 'forgot_password_screen.dart';
 import 'home_shell.dart';
@@ -47,8 +48,11 @@ class _AuthHubScreenState extends State<AuthHubScreen> {
     if (!mounted) return;
     setState(() => _loading = false);
     if (result == 'ok') {
-      // Подтягиваем заметки нового аккаунта до перехода
+      // Подтягиваем заметки и пространства нового аккаунта до перехода
       await NotesRepository.instance.load();
+      await FamilyService.instance.load();
+      FamilyService.instance.loadUnread();
+      FamilyService.instance.startBackgroundPolling();
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const HomeShell()),
@@ -61,6 +65,7 @@ class _AuthHubScreenState extends State<AuthHubScreen> {
 
   Future<void> _guest() async {
     await AuthService.instance.continueAsGuest();
+    await FamilyService.instance.clear();
     await NotesRepository.instance.load();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
@@ -78,6 +83,7 @@ class _AuthHubScreenState extends State<AuthHubScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       body: ThemedBackground(
         assetPath: ThemeOption.night.backgroundAsset,
@@ -93,7 +99,7 @@ class _AuthHubScreenState extends State<AuthHubScreen> {
                     Text(
                       _registerMode ? 'Создать аккаунт' : 'С возвращением',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 30,
                         fontWeight: FontWeight.w900,
                         letterSpacing: -0.6,
@@ -117,7 +123,8 @@ class _AuthHubScreenState extends State<AuthHubScreen> {
                           TextField(
                             controller: _email,
                             keyboardType: TextInputType.emailAddress,
-                            style: const TextStyle(color: Colors.white),
+                            style: TextStyle(
+                                color: dark ? Colors.white : AppPalette.inkDeep),
                             decoration: const InputDecoration(
                               hintText: 'Email',
                               prefixIcon: Icon(Icons.mail_outline_rounded),
@@ -127,7 +134,8 @@ class _AuthHubScreenState extends State<AuthHubScreen> {
                           TextField(
                             controller: _password,
                             obscureText: _obscure,
-                            style: const TextStyle(color: Colors.white),
+                            style: TextStyle(
+                                color: dark ? Colors.white : AppPalette.inkDeep),
                             decoration: InputDecoration(
                               hintText: 'Пароль',
                               prefixIcon: const Icon(Icons.lock_outline_rounded),
@@ -165,7 +173,10 @@ class _AuthHubScreenState extends State<AuthHubScreen> {
                               child: Text(
                                 'Забыли пароль?',
                                 style: TextStyle(
-                                  color: Colors.white.withOpacity(0.7),
+                                  color: (dark
+                                          ? Colors.white
+                                          : AppPalette.inkDeep)
+                                      .withOpacity(0.7),
                                 ),
                               ),
                             ),
@@ -177,7 +188,8 @@ class _AuthHubScreenState extends State<AuthHubScreen> {
                       onPressed: _guest,
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.white,
-                        side: BorderSide(color: Colors.white.withOpacity(0.35)),
+                        side: BorderSide(
+                            color: Colors.white.withOpacity(0.35)),
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),

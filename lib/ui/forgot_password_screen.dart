@@ -48,10 +48,16 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppPalette.inkDeep,
+      backgroundColor:
+          Theme.of(context).brightness == Brightness.dark
+              ? AppPalette.inkDeep
+              : AppPalette.paper,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
+        foregroundColor:
+            Theme.of(context).brightness == Brightness.dark
+                ? Colors.white
+                : AppPalette.inkDeep,
         title: const Text('Восстановление пароля'),
       ),
       body: SafeArea(
@@ -81,12 +87,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           ),
         ),
         const SizedBox(height: 22),
-        const Text(
+        Text(
           'Забыли пароль?',
           style: TextStyle(
             fontSize: 28,
             fontWeight: FontWeight.w900,
-            color: Colors.white,
+            color: Theme.of(context).brightness == Brightness.dark
+                ? Colors.white
+                : AppPalette.inkDeep,
             letterSpacing: -0.5,
           ),
         ),
@@ -96,7 +104,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           style: TextStyle(
             fontSize: 15,
             height: 1.45,
-            color: Colors.white.withOpacity(0.75),
+            color: (Theme.of(context).brightness == Brightness.dark
+                    ? Colors.white
+                    : AppPalette.inkDeep)
+                .withOpacity(0.75),
           ),
         ),
         const SizedBox(height: 22),
@@ -104,7 +115,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           child: TextField(
             controller: _email,
             keyboardType: TextInputType.emailAddress,
-            style: const TextStyle(color: Colors.white),
+            style: TextStyle(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? Colors.white
+                    : AppPalette.inkDeep),
             decoration: const InputDecoration(
               hintText: 'email@example.com',
               prefixIcon: Icon(Icons.mail_outline_rounded),
@@ -137,7 +151,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   style: TextStyle(
                     fontSize: 12.5,
                     height: 1.4,
-                    color: Colors.white.withOpacity(0.8),
+                    color: (Theme.of(context).brightness == Brightness.dark
+                            ? Colors.white
+                            : AppPalette.inkDeep)
+                        .withOpacity(0.8),
                   ),
                 ),
               ),
@@ -180,13 +197,15 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           ),
         ),
         const SizedBox(height: 22),
-        const Text(
+        Text(
           'Письмо отправлено!',
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 26,
             fontWeight: FontWeight.w900,
-            color: Colors.white,
+            color: Theme.of(context).brightness == Brightness.dark
+                ? Colors.white
+                : AppPalette.inkDeep,
           ),
         ),
         const SizedBox(height: 10),
@@ -196,7 +215,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           style: TextStyle(
             fontSize: 15,
             height: 1.4,
-            color: Colors.white.withOpacity(0.8),
+            color: (Theme.of(context).brightness == Brightness.dark
+                    ? Colors.white
+                    : AppPalette.inkDeep)
+                .withOpacity(0.8),
           ),
         ),
         const SizedBox(height: 18),
@@ -204,11 +226,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Что делать дальше:',
                 style: TextStyle(
                   fontWeight: FontWeight.w800,
-                  color: Colors.white,
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? Colors.white
+                      : AppPalette.inkDeep,
                 ),
               ),
               const SizedBox(height: 10),
@@ -231,8 +255,15 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         OutlinedButton(
           onPressed: () => setState(() => _sent = false),
           style: OutlinedButton.styleFrom(
-            foregroundColor: Colors.white,
-            side: BorderSide(color: Colors.white.withOpacity(0.35)),
+            foregroundColor:
+                Theme.of(context).brightness == Brightness.dark
+                    ? Colors.white
+                    : AppPalette.inkDeep,
+            side: BorderSide(
+                color: (Theme.of(context).brightness == Brightness.dark
+                        ? Colors.white
+                        : AppPalette.inkDeep)
+                    .withOpacity(0.35)),
             padding: const EdgeInsets.symmetric(vertical: 16),
           ),
           child: const Text('Отправить ещё раз / другой email'),

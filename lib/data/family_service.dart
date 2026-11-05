@@ -250,6 +250,32 @@ class FamilyService {
     }
   }
 
+  /// Полная очистка состояния (выход из аккаунта / смена пользователя).
+  /// Сбрасывает пространства, приглашения, непрочитанные и локальный кэш.
+  Future<void> clear() async {
+    stopBackgroundPolling();
+    spaces.value = [];
+    invites.value = [];
+    unread.value = {};
+    activeChatSpaceId = null;
+    final prefs = await _p();
+    await prefs.remove(_kSpaces);
+    await prefs.remove(_kInvites);
+    // Кэши пространств (members/notes/msgs/unread/lastmsg) удаляем по префиксу.
+    final keys = prefs.getKeys().toList();
+    for (final k in keys) {
+      if (k.startsWith(_kUnreadPrefix) ||
+          k.startsWith(_kLastMsgPrefix) ||
+          k.startsWith(_kMembersPrefix) ||
+          k.startsWith(_kNotesPrefix) ||
+          k.startsWith(_kMsgsPrefix) ||
+          k.startsWith('family_knowntasks_v1_') ||
+          k.startsWith('space_rem_fired_v1_')) {
+        await prefs.remove(k);
+      }
+    }
+  }
+
   // ── Загрузка ──────────────────────────────────────────────
 
   Future<void> load() async {
@@ -342,10 +368,13 @@ class FamilyService {
         await prefs.setString(_kInvites,
             jsonEncode(remoteInvites.map((i) => i.toMap()).toList()));
       } else {
-        spaces.value = localSpaces;
-        invites.value = _decodeList(prefs.getString(_kInvites))
-            .map(FamilyInvite.fromMap)
-            .toList();
+        // Гость — не показываем чужие пространства.
+        // Очищаем кэш, если он остался от предыдущего аккаунта.
+        if (localSpaces.isNotEmpty) {
+          await clear();
+        }
+        spaces.value = [];
+        invites.value = [];
       }
     } finally {
       loading.value = false;

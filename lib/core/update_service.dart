@@ -32,7 +32,7 @@ class UpdateService {
   UpdateService._();
 
   /// Текущая версия приложения. Держать в синхроне с pubspec.yaml.
-  static const appVersion = '1.3.4';
+  static const appVersion = '1.3.5';
 
   /// URL манифеста обновлений (GitHub Releases, всегда последняя версия).
   static const manifestUrl =

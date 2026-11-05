@@ -78,7 +78,7 @@ class ThemeOption {
     isDark: false,
     seed: AppPalette.ink,
     accent: const Color(0xFF3A6EA5),
-    accentSoft: const Color(0xFF7FA8D4),
+    accentSoft: const Color(0xFF5A8FC4),
     backgroundAsset: 'assets/backgrounds/bg_classic.png',
   );
 
@@ -100,7 +100,7 @@ class ThemeOption {
     isDark: false,
     seed: Color(0xFFB8956A),
     accent: const Color(0xFFB8713E),
-    accentSoft: const Color(0xFFD4A06B),
+    accentSoft: const Color(0xFFA0703C),
     backgroundAsset: 'assets/backgrounds/bg_sunset.png',
   );
 
@@ -141,7 +141,7 @@ class ThemeOption {
     isDark: false,
     seed: Color(0xFFE8889B),
     accent: const Color(0xFFE06B84),
-    accentSoft: const Color(0xFFF0A3B4),
+    accentSoft: const Color(0xFFC4667E),
   );
 
   static const sunset = ThemeOption(
@@ -151,7 +151,7 @@ class ThemeOption {
     isDark: false,
     seed: Color(0xFFF4845F),
     accent: const Color(0xFFF4724B),
-    accentSoft: const Color(0xFFF9A078),
+    accentSoft: const Color(0xFFC85A32),
   );
 
   static const midnight = ThemeOption(
@@ -369,7 +369,7 @@ ThemeData buildTheme(ThemeOption option) {
     ),
     floatingActionButtonTheme: FloatingActionButtonThemeData(
       backgroundColor: AppPalette.accent,
-      foregroundColor: AppPalette.inkDeep,
+      foregroundColor: scheme.onPrimary,
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
     ),

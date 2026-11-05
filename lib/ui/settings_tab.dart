@@ -399,23 +399,32 @@ class _SettingsTabState extends State<SettingsTab> {
                 ),
                 const Divider(height: 8),
               ],
-              _SettingsTile(
-                icon: Icons.phone_android_rounded,
-                title: 'Версия для смартфона',
-                subtitle: 'Установите Планер на смартфон —\nзаметки синхронизируются с компьютером',
-                trailing: const Icon(Icons.open_in_new_rounded, size: 18),
-                onTap: () => _showPhoneVersionDialog(context),
-              ),
+              if (Platform.isWindows)
+                _SettingsTile(
+                  icon: Icons.phone_android_rounded,
+                  title: 'Версия для смартфона',
+                  subtitle: 'Установите Планер на смартфон —\nзаметки синхронизируются с компьютером',
+                  trailing: const Icon(Icons.open_in_new_rounded, size: 18),
+                  onTap: () => _showPhoneVersionDialog(context),
+                )
+              else
+                _SettingsTile(
+                  icon: Icons.computer_rounded,
+                  title: 'Версия для ПК',
+                  subtitle: 'Установите Планер на компьютер —\nзаметки синхронизируются с телефоном',
+                  trailing: const Icon(Icons.open_in_new_rounded, size: 18),
+                  onTap: () => _showPCVersionDialog(context),
+                ),
               const Divider(height: 8),
               _SettingsTile(
                 icon: Icons.info_outline_rounded,
                 title: 'О приложении',
-                subtitle: 'Планер 1.3.4',
+                subtitle: 'Планер 1.3.5',
                 onTap: () {
                   showAboutDialog(
                     context: context,
                     applicationName: 'Планер',
-                    applicationVersion: '1.3.4 · BETA',
+                    applicationVersion: '1.3.5 · BETA',
                     children: const [
                       SizedBox(height: 12),
                       Text(
@@ -450,6 +459,11 @@ class _SettingsTabState extends State<SettingsTab> {
   /// Ссылка на страницу смартфон-версии (RuStore).
   static const phoneVersionUrl =
       'https://www.rustore.ru/catalog/app/ru.planer.notes';
+
+  /// Прямая ссылка на установщик ПК-версии (GitHub Releases).
+  static const pcVersionUrl =
+      'https://github.com/milka54/planer/releases/latest/download/planer-setup.exe';
+
 
   Future<void> _showPhoneVersionDialog(BuildContext context) async {
     await showDialog<void>(
@@ -514,6 +528,77 @@ class _SettingsTabState extends State<SettingsTab> {
                 );
               } catch (_) {
                 showSnack(context, 'Не удалось открыть ссылку');
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showPCVersionDialog(BuildContext context) async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        title: const Text('Планер для компьютера'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Windows-версия позволяет работать с заметками '
+              'на компьютере: вход в тот же аккаунт, все разделы '
+              'и заметки синхронизируются с телефоном.',
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Icon(Icons.computer_rounded,
+                    size: 18, color: AppPalette.accent),
+                SizedBox(width: 8),
+                Expanded(child: Text('Установите Планер для Windows')),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.sync_rounded, size: 18, color: AppPalette.accent),
+                SizedBox(width: 8),
+                Expanded(child: Text('Войдите в аккаунт — данные подтянутся')),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Закрыть'),
+          ),
+          TextButton.icon(
+            icon: const Icon(Icons.copy_rounded, size: 18),
+            label: const Text('Скопировать ссылку'),
+            onPressed: () async {
+              await Clipboard.setData(
+                  const ClipboardData(text: pcVersionUrl));
+              if (ctx.mounted) Navigator.pop(ctx);
+              if (context.mounted) {
+                showSnack(context, 'Ссылка скопирована');
+              }
+            },
+          ),
+          FilledButton.icon(
+            icon: const Icon(Icons.download_rounded),
+            label: const Text('Скачать для Windows'),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                await launchUrl(
+                  Uri.parse(pcVersionUrl),
+                  mode: LaunchMode.externalApplication,
+                );
+              } catch (_) {
+                showSnack(context, 'Не удалось скачать файл');
               }
             },
           ),

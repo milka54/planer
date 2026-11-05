@@ -360,6 +360,7 @@ Future<void> logoutFlow(BuildContext context) async {
   );
   if (confirmed != true) return;
   await AuthService.instance.signOut();
+  await FamilyService.instance.clear();
   await NotesRepository.instance.load();
   if (!context.mounted) return;
   Navigator.of(context).pushAndRemoveUntil(
