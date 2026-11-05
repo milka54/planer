@@ -2,7 +2,7 @@
 ; Собрать: ISCC.exe planer-setup.iss
 
 #define AppName "Планер"
-#define AppVersion "1.3.5"
+#define AppVersion "1.3.6"
 #define AppPublisher "Planer"
 #define AppExeName "planer.exe"
 #define BuildDir "..\build\windows\x64\runner\Release"

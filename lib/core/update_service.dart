@@ -32,7 +32,7 @@ class UpdateService {
   UpdateService._();
 
   /// Текущая версия приложения. Держать в синхроне с pubspec.yaml.
-  static const appVersion = '1.3.5';
+  static const appVersion = '1.3.6';
 
   /// URL манифеста обновлений (GitHub Releases, всегда последняя версия).
   static const manifestUrl =
@@ -116,9 +116,26 @@ class UpdateService {
         "    Start-Process -FilePath 'powershell' -Verb RunAs -Wait "
         "-ArgumentList '-NoProfile','-ExecutionPolicy','Bypass',"
         "'-EncodedCommand','${_psEncode(copyScript)}'\n"
-        '  } catch {}\n'
+        '  } catch {\n'
+        '    \$global:updFailed = \$true\n'
+        '  }\n'
         '}\n'
-        '$restart\n';
+        'if (-not \$global:updFailed) {\n'
+        '  Start-Sleep -Seconds 2\n'
+        '  \$check = Get-Item \'$appDir\\planer.exe\' -ErrorAction SilentlyContinue\n'
+        '  if (\$check -and \$check.LastWriteTime -gt (Get-Date).AddMinutes(-5)) {\n'
+        '    $restart\n'
+        '  } else {\n'
+        '    \$global:updFailed = \$true\n'
+        '  }\n'
+        '}\n'
+        'if (\$global:updFailed) {\n'
+        '  Add-Type -AssemblyName System.Windows.Forms\n'
+        '  [System.Windows.Forms.MessageBox]::Show('
+        "'Не удалось обновить автоматически. Установите вручную: "
+        "https://github.com/milka54/planer/releases/latest','Планер')\n"
+        '  $restart\n'
+        '}\n';
 
     await Process.start(
       'powershell',
@@ -166,7 +183,11 @@ class UpdateService {
   }) async {
     final client = http.Client();
     try {
-      final resp = await client.send(http.Request('GET', Uri.parse(url)));
+      final req = http.Request('GET', Uri.parse(url));
+      req.followRedirects = true;
+      req.maxRedirects = 5;
+      req.headers['User-Agent'] = 'PlanerUpdater';
+      final resp = await client.send(req);
       if (resp.statusCode != 200) {
         throw Exception('HTTP ${resp.statusCode}');
       }

@@ -419,12 +419,12 @@ class _SettingsTabState extends State<SettingsTab> {
               _SettingsTile(
                 icon: Icons.info_outline_rounded,
                 title: 'О приложении',
-                subtitle: 'Планер 1.3.5',
+                subtitle: 'Планер 1.3.6',
                 onTap: () {
                   showAboutDialog(
                     context: context,
                     applicationName: 'Планер',
-                    applicationVersion: '1.3.5 · BETA',
+                    applicationVersion: '1.3.6 · BETA',
                     children: const [
                       SizedBox(height: 12),
                       Text(
